@@ -1,6 +1,6 @@
 # Contract: MCP Tool Registry
 
-**Plan**: [../plan.md](../plan.md) | Seven scoped tools across three categories, exposed by the FastMCP server (`:8002`) and consumed by the LangGraph agent and compatible local agents. Every tool is **read-only** in Phase 1 (FR-012). Access is gated by `agent_policies.allowed_tools` per role (FR-011); arguments are validated against the PAT/Actor workspace scope (FR-027).
+**Plan**: [../plan.md](../plan.md) | Nine scoped tools across three categories, exposed by the FastMCP server (`:8002`) and consumed by the LangGraph agent and compatible local agents. Every tool is **read-only** in Phase 1 (FR-012) — `crawl_url` is the sole exception, enqueuing an ingestion job into the caller's own workspace (no external side effect, no mutation of existing knowledge), and is role-gated. Access is gated by `agent_policies.allowed_tools` per role (FR-011); arguments are validated against the PAT/Actor workspace scope (FR-027).
 
 ## Category A — Knowledge (semantic, Tier 1)
 
