@@ -35,6 +35,10 @@
 ### `crawl_url(url: string) -> CrawlResult`
 - Triggers a Crawl4AI ingestion job (publishes `ingestion.crawl.<ws>`). Restricted to roles whose `allowed_tools` include it (e.g., `admin`); a `user`-role agent cannot invoke it, so an injected "now crawl X" cannot escalate (FR-011).
 
+## External agent integration note
+
+These nine tools are the **shared knowledge layer** — consumed by both the built-in LangGraph agent and any external/local agent that connects to the MCP server at `:8002` with a valid device PAT. An external agent that only calls `/llm/proxy` (the LLM gateway) does **not** automatically get access to these tools; it must explicitly configure the MCP server as a tool source. When both endpoints are configured together, the external agent operates with identical knowledge access and security guarantees as the first-party chat.
+
 ## Cross-cutting rules
 
 - **Allowlist enforced per dispatch.** A tool not in the caller role's `allowed_tools` is rejected before execution (injection escalation defense, research §5).
