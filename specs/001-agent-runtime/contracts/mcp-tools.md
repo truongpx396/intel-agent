@@ -6,7 +6,7 @@
 
 ### `search_personal_knowledge(query: string, top_k?: int) -> Chunk[]`
 - Searches the `personal` Qdrant collection for the caller's own documents.
-- Mandatory payload pre-filter: `workspace_id == ctx AND user_id == ctx AND access_level <= effective_access_level`.
+- Mandatory payload pre-filter: `workspace_id == ctx AND user_id == ctx`. Personal documents are **owner-scoped, not clearance-scoped** — a member always sees their own personal docs regardless of their current clearance level (matches [data-model.md](../data-model.md) dual-collection strategy; `access_level` is **not** applied here).
 - Returns reranked parent chunks with `doc_id`, `score`, `source_type`, `tags`.
 
 ### `search_workspace_knowledge(query: string, top_k?: int) -> Chunk[]`
@@ -14,7 +14,7 @@
 - Mandatory pre-filter: `workspace_id == ctx AND access_level <= effective_access_level` (FR-007, SC-001).
 
 ### `get_document_by_id(doc_id: uuid) -> Document`
-- Lookup by ID; returns `403 forbidden` if the document is outside the caller's workspace or above clearance.
+- Lookup by ID; returns `404 not_found` if the document is outside the caller's workspace or above clearance. **Existence is not probeable** — "does not exist" and "not authorized" return the identical `404` so a caller cannot infer that a higher-clearance document exists (SC-001).
 
 ### `list_documents(tag?: string, scope?: "personal"|"workspace") -> DocumentSummary[]`
 - Lists library entries the caller may see; clearance + RLS scoped.
@@ -34,6 +34,7 @@
 
 ### `crawl_url(url: string) -> CrawlResult`
 - Triggers a Crawl4AI ingestion job (publishes `ingestion.crawl.<ws>`). Restricted to roles whose `allowed_tools` include it (e.g., `admin`); a `user`-role agent cannot invoke it, so an injected "now crawl X" cannot escalate (FR-011).
+- **SSRF defense (mandatory)**: the `url` is attacker-influenceable (it may originate from injected document content processed by an admin-role agent), so before any fetch it MUST be validated against an SSRF allowlist — `https`-only scheme; reject private/loopback/link-local/reserved IPs after DNS resolution of **all** A/AAAA records (anti-DNS-rebinding); `redirect: error` (no redirect following); bounded response size and timeout. In `byok` mode (Node 0 moderation skipped), the allowlist + this SSRF guard are the **only** defenses, so they must be airtight.
 
 ## External agent integration note
 
@@ -50,5 +51,6 @@ These nine tools are the **shared knowledge layer** — consumed by both the bui
 
 - `search_workspace_knowledge` never returns a chunk with `access_level > effective_access_level` (SC-001, hard).
 - A `user`-role agent invoking `crawl_url` or a structured tool not in its allowlist is rejected (FR-011).
+- `crawl_url` rejects a URL resolving to a private/loopback/link-local/reserved IP and rejects non-`https` schemes before any fetch (SSRF defense).
 - Every successful tool call produces exactly one `agent_audit_log` row with a `result_hash` (FR-023).
 - Structured tools reject any attempt to pass raw SQL; only typed filters are accepted (FR-008).
