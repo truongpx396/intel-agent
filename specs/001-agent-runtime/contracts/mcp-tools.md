@@ -58,3 +58,21 @@ These eight tools are the **shared knowledge layer** — consumed by both the bu
 - The note-enrichment fetch (`web_distill`) rejects a URL resolving to a private/loopback/link-local/reserved IP and rejects non-`https` schemes before any fetch (SSRF defense).
 - Every successful tool call produces exactly one `agent_audit_log` row with a `result_hash` (FR-023).
 - Structured tools reject any attempt to pass raw SQL; only typed filters are accepted (FR-008).
+
+---
+
+## Phase 2 (out of scope here)
+
+> Out of Phase 1 scope (see [spec.md](../spec.md) "Out of Scope"). Two additions are designed
+> in [draft-plan.md](../../draft-plan.md), neither of which changes the tools above:
+>
+> - **Category D — typed knowledge** (`get_artifact_by_type`, `search_biz_rules`,
+>   `get_agent_registry`, `resolve_dependency_chain`) — still read-only, still gated by
+>   `agent_policies.allowed_tools`, and still subject to the same clearance pre-filter as
+>   Category A. See [Enterprise Knowledge Layer](../../draft-plan.md#phase-2--enterprise-knowledge-layer-typed-artifacts-knowledge-graph--agent-context-api).
+> - **Write-capable tools** (e.g. `ingest_document`, `write_memory`). Phase 1 has **no**
+>   agent-callable write tool (FR-012), and write is designed as an explicit capability
+>   (`agent_policies.can_write`, off by default) rather than something implied by read
+>   access. Any UI that lists these must mark them as future-phase so it never implies a
+>   capability this server will refuse. See
+>   [Agent Access & Accountability](../../draft-plan.md#phase-2--agent-access--accountability).
