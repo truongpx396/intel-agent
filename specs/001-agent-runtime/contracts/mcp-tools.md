@@ -50,6 +50,7 @@ These eight tools are the **shared knowledge layer** — consumed by both the bu
 - **Untrusted output.** Tool results are data, never instructions; the router re-derives the next step from the original classified intent, not from tool output (FR-011).
 - **Audit.** Every tool call writes `agent_audit_log` (`tool_called`, `token_cost`, `result_hash`, `trace_id`) (FR-023).
 - **No state mutation / no side-effects** by any Phase-1 agent tool; web crawling is not agent-reachable (it is an internal step of note enrichment, gated by the member accept-step). Any future write/send tool — and the Phase-2 `web_search` — defaults to human confirmation (FR-012, Phase 2).
+- **Own enforcement boundary (parity with the Go chain).** External agents reach `:8002` **directly**, bypassing the Go BFF middleware, so the MCP endpoint MUST apply the same request-level controls itself, reading the *same* policy stores — never a second copy: device-PAT validation + revocation (shared Redis PAT/session store), per-user/per-workspace **rate limits and body-size caps** (shared Redis counters), and the `app.workspace_id`/`app.user_id`/`app.clearance` RLS GUCs set from the PAT before any Postgres query. `allowed_tools`, clearance, and budgets are one authoritative source shared with Go — **one policy, enforced at each ingress** (research §19). This is a PEP that reads central policy, not a second policy.
 
 ## Contract test obligations
 
@@ -58,6 +59,7 @@ These eight tools are the **shared knowledge layer** — consumed by both the bu
 - The note-enrichment fetch (`web_distill`) rejects a URL resolving to a private/loopback/link-local/reserved IP and rejects non-`https` schemes before any fetch (SSRF defense).
 - Every successful tool call produces exactly one `agent_audit_log` row with a `result_hash` (FR-023).
 - Structured tools reject any attempt to pass raw SQL; only typed filters are accepted (FR-008).
+- A device PAT revoked via `DELETE /devices/{id}` is rejected by the MCP endpoint on its next call (parity with `/llm/proxy`), and an external agent exceeding the shared per-user/per-workspace rate limit is throttled at `:8002` the same as on a Go route — the MCP endpoint reads the same Redis policy stores, not a second copy (research §19).
 
 ---
 
