@@ -30,13 +30,13 @@
       "updated": 1738195200000,
       "link": null,
       "locked": false,
-      "text": "LangGraph RAG Agent — Phase 1: Nodes 0–6 + Node 7: Grade/Reflect (Phase 2)",
+      "text": "LangGraph RAG Agent — Phase 1. Canonical node names + IO: contracts/agent-graph.md (numbers are legacy aliases). Phase 2 adds grade_retrieval (before generate) + grade_answer (after generate).",
       "fontSize": 24,
       "fontFamily": 5,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "LangGraph RAG Agent — Phase 1: Nodes 0–6 + Node 7: Grade/Reflect (Phase 2)",
+      "originalText": "LangGraph RAG Agent — Phase 1. Canonical node names + IO: contracts/agent-graph.md (numbers are legacy aliases). Phase 2 adds grade_retrieval (before generate) + grade_answer (after generate).",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -102,13 +102,13 @@
       "updated": 1738195200000,
       "link": null,
       "locked": false,
-      "text": "Node 0: Input Guard\n(moderation, injection check,\nallowed-tools gate)",
+      "text": "Node 0 (guard): Input Guard\n(moderation, injection check,\nallowed-tools gate; fail-closed)",
       "fontSize": 18,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "lg002",
-      "originalText": "Node 0: Input Guard\n(moderation, injection check,\nallowed-tools gate)",
+      "originalText": "Node 0 (guard): Input Guard\n(moderation, injection check,\nallowed-tools gate; fail-closed)",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -116,7 +116,7 @@
       "id": "lg003",
       "type": "rectangle",
       "x": 340,
-      "y": 240,
+      "y": 400.28131526514153,
       "width": 320,
       "height": 80,
       "angle": 0,
@@ -134,25 +134,33 @@
         "type": 3
       },
       "seed": 101003,
-      "version": 1,
-      "versionNonce": 201003,
+      "version": 5,
+      "versionNonce": 2049575049,
       "isDeleted": false,
       "boundElements": [
         {
           "type": "text",
           "id": "txt_lg003"
+        },
+        {
+          "id": "lg010",
+          "type": "arrow"
+        },
+        {
+          "id": "lg032",
+          "type": "arrow"
         }
       ],
-      "updated": 1738195200000,
+      "updated": 1785056884709,
       "link": null,
       "locked": false
     },
     {
       "id": "txt_lg003",
       "type": "text",
-      "x": 381.2,
-      "y": 246.25,
-      "width": 237.60000000000002,
+      "x": 347.9450988769531,
+      "y": 406.53131526514153,
+      "width": 304.10980224609375,
       "height": 67.5,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -167,31 +175,31 @@
       "index": "a4",
       "roundness": null,
       "seed": 10002,
-      "version": 1,
-      "versionNonce": 10003,
+      "version": 5,
+      "versionNonce": 323980807,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056867167,
       "link": null,
       "locked": false,
-      "text": "Node 1: Query Rewrite\n(BAML rewriter,\nhistory-aware expansion)",
+      "text": "Node 1 (rewrite): Query Rewrite\n(BAML, history-aware; preceded by\nroute node — intent + model tier)",
       "fontSize": 18,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "lg003",
-      "originalText": "Node 1: Query Rewrite\n(BAML rewriter,\nhistory-aware expansion)",
+      "originalText": "Node 1 (rewrite): Query Rewrite\n(BAML, history-aware; preceded by\nroute node — intent + model tier)",
       "autoResize": true,
       "lineHeight": 1.25
     },
     {
       "id": "lg004",
       "type": "rectangle",
-      "x": 340,
-      "y": 400,
+      "x": 337.0555668915189,
+      "y": 531.7184386777732,
       "width": 320,
-      "height": 80,
-      "angle": 0,
+      "height": 213,
+      "angle": 6.279432388313314,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "#a5d8ff",
       "fillStyle": "solid",
@@ -206,8 +214,8 @@
         "type": 3
       },
       "seed": 101004,
-      "version": 2,
-      "versionNonce": 1017983240,
+      "version": 70,
+      "versionNonce": 1418626441,
       "isDeleted": false,
       "boundElements": [
         {
@@ -217,20 +225,24 @@
         {
           "id": "lg032",
           "type": "arrow"
+        },
+        {
+          "id": "lg011",
+          "type": "arrow"
         }
       ],
-      "updated": 1781768538272,
+      "updated": 1785056830293,
       "link": null,
       "locked": false
     },
     {
       "id": "txt_lg004",
       "type": "text",
-      "x": 361.4,
-      "y": 406.25,
-      "width": 277.20000000000005,
-      "height": 67.5,
-      "angle": 0,
+      "x": 343.38068591007357,
+      "y": 536.9684386777732,
+      "width": 307.3497619628906,
+      "height": 202.5,
+      "angle": 6.279432388313314,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
       "fillStyle": "solid",
@@ -243,28 +255,28 @@
       "index": "a6",
       "roundness": null,
       "seed": 10003,
-      "version": 1,
-      "versionNonce": 10004,
+      "version": 69,
+      "versionNonce": 2107042921,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056830293,
       "link": null,
       "locked": false,
-      "text": "Node 2: Hybrid Retrieval\n(Qdrant BM25/SPLADE + dense,\naccess_level pre-filter)\nMCP: search_personal/workspace_knowledge\nPolicy gate: allowed_tools + audit_log (FR-011)",
+      "text": "Node 2 (retrieve): Hybrid Retrieval\n(Qdrant BM25/SPLADE + dense,\naccess_level pre-filter; branches on\nintent)\nMCP:\nsearch_personal/workspace_knowle\ndge\nPolicy gate: allowed_tools +\naudit_log (FR-011)",
       "fontSize": 18,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "lg004",
-      "originalText": "Node 2: Hybrid Retrieval\n(Qdrant BM25/SPLADE + dense,\naccess_level pre-filter)\nMCP: search_personal/workspace_knowledge\nPolicy gate: allowed_tools + audit_log (FR-011)",
+      "originalText": "Node 2 (retrieve): Hybrid Retrieval\n(Qdrant BM25/SPLADE + dense,\naccess_level pre-filter; branches on intent)\nMCP: search_personal/workspace_knowledge\nPolicy gate: allowed_tools + audit_log (FR-011)",
       "autoResize": true,
       "lineHeight": 1.25
     },
     {
       "id": "lg005",
       "type": "rectangle",
-      "x": 340,
-      "y": 560,
+      "x": 343.31014295316504,
+      "y": 788.3127235518641,
       "width": 320,
       "height": 80,
       "angle": 0,
@@ -282,25 +294,33 @@
         "type": 3
       },
       "seed": 101005,
-      "version": 1,
-      "versionNonce": 201005,
+      "version": 317,
+      "versionNonce": 1462729767,
       "isDeleted": false,
       "boundElements": [
         {
           "type": "text",
           "id": "txt_lg005"
+        },
+        {
+          "id": "lg011",
+          "type": "arrow"
+        },
+        {
+          "id": "lg012",
+          "type": "arrow"
         }
       ],
-      "updated": 1738195200000,
+      "updated": 1785056841476,
       "link": null,
       "locked": false
     },
     {
       "id": "txt_lg005",
       "type": "text",
-      "x": 415.85,
-      "y": 566.25,
-      "width": 168.3,
+      "x": 391.22422834134863,
+      "y": 794.5627235518641,
+      "width": 224.1718292236328,
       "height": 67.5,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -315,30 +335,30 @@
       "index": "a8",
       "roundness": null,
       "seed": 10004,
-      "version": 1,
-      "versionNonce": 10005,
+      "version": 317,
+      "versionNonce": 994787495,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056856470,
       "link": null,
       "locked": false,
-      "text": "Node 3: Reranker\n(Cohere rerank,\nparent-doc fetch)",
+      "text": "Node 3 (rerank): Reranker\n(Cohere rerank,\nparent-doc fetch)",
       "fontSize": 18,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "lg005",
-      "originalText": "Node 3: Reranker\n(Cohere rerank,\nparent-doc fetch)",
+      "originalText": "Node 3 (rerank): Reranker\n(Cohere rerank,\nparent-doc fetch)",
       "autoResize": true,
       "lineHeight": 1.25
     },
     {
       "id": "lg006",
       "type": "rectangle",
-      "x": 340,
-      "y": 720,
+      "x": 336.3053928511415,
+      "y": 904.099341047123,
       "width": 320,
-      "height": 80,
+      "height": 100,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "#b2f2bb",
@@ -354,26 +374,34 @@
         "type": 3
       },
       "seed": 101006,
-      "version": 1,
-      "versionNonce": 201006,
+      "version": 58,
+      "versionNonce": 973306247,
       "isDeleted": false,
       "boundElements": [
         {
           "type": "text",
           "id": "txt_lg006"
+        },
+        {
+          "id": "lg013",
+          "type": "arrow"
+        },
+        {
+          "id": "lg012",
+          "type": "arrow"
         }
       ],
-      "updated": 1738195200000,
+      "updated": 1785056841477,
       "link": null,
       "locked": false
     },
     {
       "id": "txt_lg006",
       "type": "text",
-      "x": 361.4,
-      "y": 726.25,
-      "width": 277.20000000000005,
-      "height": 67.5,
+      "x": 374.19346963336807,
+      "y": 909.099341047123,
+      "width": 244.22384643554688,
+      "height": 90,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -387,20 +415,20 @@
       "index": "aA",
       "roundness": null,
       "seed": 10005,
-      "version": 1,
-      "versionNonce": 10006,
+      "version": 57,
+      "versionNonce": 241195303,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056793097,
       "link": null,
       "locked": false,
-      "text": "Node 4: Context Assembly\n(parent chunks, deduplicate,\ntrim to token budget)",
+      "text": "Node 4 (assemble): Context\nAssembly\n(parent chunks, deduplicate,\ntrim to token budget)",
       "fontSize": 18,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "lg006",
-      "originalText": "Node 4: Context Assembly\n(parent chunks, deduplicate,\ntrim to token budget)",
+      "originalText": "Node 4 (assemble): Context Assembly\n(parent chunks, deduplicate,\ntrim to token budget)",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -408,7 +436,7 @@
       "id": "lg007",
       "type": "rectangle",
       "x": 340,
-      "y": 880,
+      "y": 1040,
       "width": 320,
       "height": 80,
       "angle": 0,
@@ -426,16 +454,20 @@
         "type": 3
       },
       "seed": 101007,
-      "version": 1,
-      "versionNonce": 201007,
+      "version": 3,
+      "versionNonce": 1693522377,
       "isDeleted": false,
       "boundElements": [
         {
           "type": "text",
           "id": "txt_lg007"
+        },
+        {
+          "id": "lg013",
+          "type": "arrow"
         }
       ],
-      "updated": 1738195200000,
+      "updated": 1785056783811,
       "link": null,
       "locked": false
     },
@@ -443,7 +475,7 @@
       "id": "txt_lg007",
       "type": "text",
       "x": 381.2,
-      "y": 886.25,
+      "y": 1046.25,
       "width": 237.60000000000002,
       "height": 67.5,
       "angle": 0,
@@ -459,20 +491,20 @@
       "index": "aC",
       "roundness": null,
       "seed": 10006,
-      "version": 1,
-      "versionNonce": 10007,
+      "version": 2,
+      "versionNonce": 962867933,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
-      "text": "Node 5: Memory Injection\n(Mem0 per-user context,\nLangGraph checkpoint)",
+      "text": "Node 5 (memory): Memory Injection\n(Mem0 per-user context,\nclearance-filtered at read time)",
       "fontSize": 18,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "lg007",
-      "originalText": "Node 5: Memory Injection\n(Mem0 per-user context,\nLangGraph checkpoint)",
+      "originalText": "Node 5 (memory): Memory Injection\n(Mem0 per-user context,\nclearance-filtered at read time)",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -480,7 +512,7 @@
       "id": "lg008",
       "type": "rectangle",
       "x": 340,
-      "y": 1040,
+      "y": 1200,
       "width": 320,
       "height": 80,
       "angle": 0,
@@ -498,8 +530,8 @@
         "type": 3
       },
       "seed": 101008,
-      "version": 1,
-      "versionNonce": 201008,
+      "version": 2,
+      "versionNonce": 851918990,
       "isDeleted": false,
       "boundElements": [
         {
@@ -507,7 +539,7 @@
           "id": "txt_lg008"
         }
       ],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false
     },
@@ -515,7 +547,7 @@
       "id": "txt_lg008",
       "type": "text",
       "x": 361.4,
-      "y": 1046.25,
+      "y": 1206.25,
       "width": 277.20000000000005,
       "height": 67.5,
       "angle": 0,
@@ -531,20 +563,20 @@
       "index": "aE",
       "roundness": null,
       "seed": 10007,
-      "version": 1,
-      "versionNonce": 10008,
+      "version": 2,
+      "versionNonce": 1545701476,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
-      "text": "Node 6: Response Generation\n(LLM via gateway, citations,\nSSE stream out)",
+      "text": "Node 6 (generate): Response Generation\n(LLM via gateway, citations,\nemits token stream via graph channel)",
       "fontSize": 18,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "lg008",
-      "originalText": "Node 6: Response Generation\n(LLM via gateway, citations,\nSSE stream out)",
+      "originalText": "Node 6 (generate): Response Generation\n(LLM via gateway, citations,\nemits token stream via graph channel)",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -596,10 +628,10 @@
     {
       "id": "lg010",
       "type": "arrow",
-      "x": 500,
-      "y": 320,
-      "width": 0,
-      "height": 80,
+      "x": 499.6932274810452,
+      "y": 480.5280973227505,
+      "width": 0.4621558724319925,
+      "height": 45.376492542098106,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -615,11 +647,11 @@
         "type": 2
       },
       "seed": 101010,
-      "version": 1,
-      "versionNonce": 201010,
+      "version": 109,
+      "versionNonce": 710817063,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056867168,
       "link": null,
       "locked": false,
       "points": [
@@ -628,11 +660,15 @@
           0
         ],
         [
-          0,
-          80
+          -0.4621558724319925,
+          45.376492542098106
         ]
       ],
-      "startBinding": null,
+      "startBinding": {
+        "elementId": "lg003",
+        "focus": -0.0006429732857299921,
+        "gap": 1
+      },
       "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
@@ -641,10 +677,10 @@
     {
       "id": "lg011",
       "type": "arrow",
-      "x": 500,
-      "y": 480,
-      "width": 0,
-      "height": 80,
+      "x": 496.5419820352717,
+      "y": 746.6969522891014,
+      "width": 2.101844405610791,
+      "height": 37.46618225454847,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -660,11 +696,11 @@
         "type": 2
       },
       "seed": 101011,
-      "version": 1,
-      "versionNonce": 201011,
+      "version": 332,
+      "versionNonce": 1693852841,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056837555,
       "link": null,
       "locked": false,
       "points": [
@@ -673,12 +709,20 @@
           0
         ],
         [
-          0,
-          80
+          2.101844405610791,
+          37.46618225454847
         ]
       ],
-      "startBinding": null,
-      "endBinding": null,
+      "startBinding": {
+        "elementId": "lg004",
+        "focus": 0.039771595135560195,
+        "gap": 3.5392931047666707
+      },
+      "endBinding": {
+        "elementId": "lg005",
+        "focus": -0.013552526978856729,
+        "gap": 14
+      },
       "startArrowhead": null,
       "endArrowhead": "arrow",
       "lastCommittedPoint": null
@@ -686,10 +730,10 @@
     {
       "id": "lg012",
       "type": "arrow",
-      "x": 500,
-      "y": 640,
-      "width": 0,
-      "height": 80,
+      "x": 500.72204251386313,
+      "y": 865.2423332213071,
+      "width": 0.0843945795423906,
+      "height": 32.0357472933722,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -705,11 +749,11 @@
         "type": 2
       },
       "seed": 101012,
-      "version": 1,
-      "versionNonce": 201012,
+      "version": 187,
+      "versionNonce": 2042235943,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056852106,
       "link": null,
       "locked": false,
       "points": [
@@ -718,12 +762,20 @@
           0
         ],
         [
-          0,
-          80
+          -0.0843945795423906,
+          32.0357472933722
         ]
       ],
-      "startBinding": null,
-      "endBinding": null,
+      "startBinding": {
+        "elementId": "lg005",
+        "focus": 0.015557338539386645,
+        "gap": 3.070390330556961
+      },
+      "endBinding": {
+        "elementId": "lg006",
+        "focus": 0.026119533767213973,
+        "gap": 6.821260532443603
+      },
       "startArrowhead": null,
       "endArrowhead": "arrow",
       "lastCommittedPoint": null
@@ -731,10 +783,10 @@
     {
       "id": "lg013",
       "type": "arrow",
-      "x": 500,
-      "y": 800,
-      "width": 0,
-      "height": 80,
+      "x": 499.81245648990557,
+      "y": 1006.4263959238543,
+      "width": 0.1125261060565208,
+      "height": 33.57360407614567,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -750,11 +802,11 @@
         "type": 2
       },
       "seed": 101013,
-      "version": 1,
-      "versionNonce": 201013,
+      "version": 120,
+      "versionNonce": 1474768489,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056798646,
       "link": null,
       "locked": false,
       "points": [
@@ -763,12 +815,20 @@
           0
         ],
         [
-          0,
-          80
+          -0.1125261060565208,
+          33.57360407614567
         ]
       ],
-      "startBinding": null,
-      "endBinding": null,
+      "startBinding": {
+        "elementId": "lg006",
+        "focus": -0.022991196081423877,
+        "gap": 2.3270548767313812
+      },
+      "endBinding": {
+        "elementId": "lg007",
+        "focus": -0.002711069545362681,
+        "gap": 1
+      },
       "startArrowhead": null,
       "endArrowhead": "arrow",
       "lastCommittedPoint": null
@@ -777,7 +837,7 @@
       "id": "lg014",
       "type": "arrow",
       "x": 500,
-      "y": 960,
+      "y": 1120,
       "width": 0,
       "height": 80,
       "angle": 0,
@@ -795,11 +855,11 @@
         "type": 2
       },
       "seed": 101014,
-      "version": 1,
-      "versionNonce": 201014,
+      "version": 2,
+      "versionNonce": 340416453,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
       "points": [
@@ -1091,7 +1151,7 @@
       "id": "lg020",
       "type": "rectangle",
       "x": 850,
-      "y": 400,
+      "y": 560,
       "width": 200,
       "height": 70,
       "angle": 0,
@@ -1109,8 +1169,8 @@
         "type": 3
       },
       "seed": 101020,
-      "version": 1,
-      "versionNonce": 201020,
+      "version": 2,
+      "versionNonce": 1018874303,
       "isDeleted": false,
       "boundElements": [
         {
@@ -1118,7 +1178,7 @@
           "id": "txt_lg020"
         }
       ],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false
     },
@@ -1126,7 +1186,7 @@
       "id": "txt_lg020",
       "type": "text",
       "x": 870.8,
-      "y": 412.5,
+      "y": 572.5,
       "width": 158.4,
       "height": 45,
       "angle": 0,
@@ -1142,11 +1202,11 @@
       "index": "aT",
       "roundness": null,
       "seed": 10010,
-      "version": 1,
-      "versionNonce": 10011,
+      "version": 2,
+      "versionNonce": 1937894415,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
       "text": "Semantic Cache\n(Redis, TTL 24h)",
@@ -1163,7 +1223,7 @@
       "id": "lg021",
       "type": "arrow",
       "x": 660,
-      "y": 440,
+      "y": 600,
       "width": 190,
       "height": 5,
       "angle": 0,
@@ -1181,11 +1241,11 @@
         "type": 2
       },
       "seed": 101021,
-      "version": 1,
-      "versionNonce": 201021,
+      "version": 2,
+      "versionNonce": 1899819638,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
       "points": [
@@ -1208,7 +1268,7 @@
       "id": "lg022",
       "type": "text",
       "x": 690,
-      "y": 418,
+      "y": 578,
       "width": 100,
       "height": 20,
       "angle": 0,
@@ -1224,11 +1284,11 @@
       "index": "aV",
       "roundness": null,
       "seed": 101022,
-      "version": 1,
-      "versionNonce": 201022,
+      "version": 2,
+      "versionNonce": 1719061221,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
       "text": "cache hit?",
@@ -1245,7 +1305,7 @@
       "id": "lg023",
       "type": "arrow",
       "x": 950,
-      "y": 470,
+      "y": 630,
       "width": 290,
       "height": 610,
       "angle": 0,
@@ -1263,11 +1323,11 @@
         "type": 2
       },
       "seed": 101023,
-      "version": 1,
-      "versionNonce": 201023,
+      "version": 2,
+      "versionNonce": 122775253,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
       "points": [
@@ -1289,8 +1349,8 @@
     {
       "id": "lg024",
       "type": "text",
-      "x": 960,
-      "y": 760,
+      "x": 824.0122008305927,
+      "y": 922.6818721943489,
       "width": 140,
       "height": 20,
       "angle": 0,
@@ -1306,11 +1366,11 @@
       "index": "aX",
       "roundness": null,
       "seed": 101024,
-      "version": 1,
-      "versionNonce": 201024,
+      "version": 84,
+      "versionNonce": 1583015719,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056927413,
       "link": null,
       "locked": false,
       "text": "skip to output",
@@ -1326,8 +1386,8 @@
     {
       "id": "lg025",
       "type": "text",
-      "x": 860,
-      "y": 1060,
+      "x": 721.7054156564323,
+      "y": 1175.3083815445182,
       "width": 220,
       "height": 40,
       "angle": 0,
@@ -1343,11 +1403,11 @@
       "index": "aY",
       "roundness": null,
       "seed": 101025,
-      "version": 1,
-      "versionNonce": 201025,
+      "version": 90,
+      "versionNonce": 1472790951,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056920397,
       "link": null,
       "locked": false,
       "text": "Credit deduction\n(Redis idem guard)",
@@ -1363,8 +1423,8 @@
     {
       "id": "lg026",
       "type": "text",
-      "x": 860,
-      "y": 900,
+      "x": 761.6615604820317,
+      "y": 1042.0145773819522,
       "width": 200,
       "height": 40,
       "angle": 0,
@@ -1380,20 +1440,20 @@
       "index": "aZ",
       "roundness": null,
       "seed": 101026,
-      "version": 1,
-      "versionNonce": 201026,
+      "version": 62,
+      "versionNonce": 1543072807,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056925963,
       "link": null,
       "locked": false,
-      "text": "LangGraph checkpoint\n(Redis)",
+      "text": "checkpoint after each node\n(durable form -> Redis)",
       "fontSize": 14,
       "fontFamily": 5,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "LangGraph checkpoint\n(Redis)",
+      "originalText": "checkpoint after each node\n(durable form -> Redis)",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -1401,7 +1461,7 @@
       "id": "lg027",
       "type": "arrow",
       "x": 500,
-      "y": 1120,
+      "y": 1280,
       "width": 0,
       "height": 80,
       "angle": 0,
@@ -1419,11 +1479,11 @@
         "type": 2
       },
       "seed": 201001,
-      "version": 1,
-      "versionNonce": 301001,
+      "version": 2,
+      "versionNonce": 1831919217,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
       "points": [
@@ -1445,10 +1505,10 @@
     {
       "id": "lg028",
       "type": "diamond",
-      "x": 330,
-      "y": 1200,
+      "x": 334.3041235566652,
+      "y": 1308.4630434260748,
       "width": 340,
-      "height": 110,
+      "height": 170,
       "angle": 0,
       "strokeColor": "#e67700",
       "backgroundColor": "#fff3bf",
@@ -1462,8 +1522,8 @@
       "index": "b1",
       "roundness": null,
       "seed": 201002,
-      "version": 2,
-      "versionNonce": 2029015816,
+      "version": 57,
+      "versionNonce": 176037863,
       "isDeleted": false,
       "boundElements": [
         {
@@ -1475,17 +1535,17 @@
           "type": "arrow"
         }
       ],
-      "updated": 1781768538272,
+      "updated": 1785056879472,
       "link": null,
       "locked": false
     },
     {
       "id": "txt_lg028",
       "type": "text",
-      "x": 340,
-      "y": 1237,
-      "width": 320,
-      "height": 36,
+      "x": 426.5741888642824,
+      "y": 1355.9630434260748,
+      "width": 155.45986938476562,
+      "height": 75,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -1499,20 +1559,20 @@
       "index": "b2",
       "roundness": null,
       "seed": 201003,
-      "version": 1,
-      "versionNonce": 301003,
+      "version": 57,
+      "versionNonce": 1168083719,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056879472,
       "link": null,
       "locked": false,
-      "text": "Node 7: Grade/Reflect (Phase 2)\nResponse relevant + coherent?",
+      "text": "grade_answer (Phase\n2, durable form only)\nFaithful to sources?\n(Self-RAG)",
       "fontSize": 15,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "lg028",
-      "originalText": "Node 7: Grade/Reflect (Phase 2)\nResponse relevant + coherent?",
+      "originalText": "grade_answer (Phase 2, durable form only)\nFaithful to sources? (Self-RAG)",
       "autoResize": true,
       "lineHeight": 1.25
     },
@@ -1520,7 +1580,7 @@
       "id": "lg029",
       "type": "rectangle",
       "x": 760,
-      "y": 1218,
+      "y": 1523,
       "width": 230,
       "height": 74,
       "angle": 0,
@@ -1538,8 +1598,8 @@
         "type": 3
       },
       "seed": 201004,
-      "version": 1,
-      "versionNonce": 301004,
+      "version": 2,
+      "versionNonce": 1970911653,
       "isDeleted": false,
       "boundElements": [
         {
@@ -1547,7 +1607,7 @@
           "id": "txt_lg029"
         }
       ],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false
     },
@@ -1555,7 +1615,7 @@
       "id": "txt_lg029",
       "type": "text",
       "x": 768,
-      "y": 1236,
+      "y": 1541,
       "width": 214,
       "height": 38,
       "angle": 0,
@@ -1571,11 +1631,11 @@
       "index": "b4",
       "roundness": null,
       "seed": 201005,
-      "version": 1,
-      "versionNonce": 301005,
+      "version": 2,
+      "versionNonce": 1275293257,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
       "text": "Return Response to Client\n(emit SSE done event)",
@@ -1591,9 +1651,9 @@
     {
       "id": "lg030",
       "type": "arrow",
-      "x": 670,
-      "y": 1255,
-      "width": 90,
+      "x": 660,
+      "y": 1560,
+      "width": 100,
       "height": 0,
       "angle": 0,
       "strokeColor": "#2f9e44",
@@ -1610,11 +1670,11 @@
         "type": 2
       },
       "seed": 201006,
-      "version": 1,
-      "versionNonce": 301006,
+      "version": 2,
+      "versionNonce": 731922656,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056444705,
       "link": null,
       "locked": false,
       "points": [
@@ -1623,7 +1683,7 @@
           0
         ],
         [
-          90,
+          100,
           0
         ]
       ],
@@ -1636,10 +1696,10 @@
     {
       "id": "lg031",
       "type": "text",
-      "x": 676,
-      "y": 1234,
-      "width": 90,
-      "height": 18,
+      "x": 520,
+      "y": 1478,
+      "width": 89.38790893554688,
+      "height": 16.25,
       "angle": 0,
       "strokeColor": "#2f9e44",
       "backgroundColor": "transparent",
@@ -1653,11 +1713,11 @@
       "index": "b6",
       "roundness": null,
       "seed": 201007,
-      "version": 1,
-      "versionNonce": 301007,
+      "version": 3,
+      "versionNonce": 1058990953,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1738195200000,
+      "updated": 1785056933581,
       "link": null,
       "locked": false,
       "text": "yes: sufficient",
@@ -1673,10 +1733,10 @@
     {
       "id": "lg032",
       "type": "arrow",
-      "x": 499.9826838723406,
-      "y": 1310,
-      "width": 340.18194678712405,
-      "height": 930.9264128297822,
+      "x": 491.80045655912465,
+      "y": 1473.0710348842922,
+      "width": 400.4985445155305,
+      "height": 1032.6272952677873,
       "angle": 0,
       "strokeColor": "#e03131",
       "backgroundColor": "transparent",
@@ -1692,11 +1752,11 @@
         "type": 2
       },
       "seed": 201008,
-      "version": 811,
-      "versionNonce": 1683859320,
+      "version": 1132,
+      "versionNonce": 45110441,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1781768567506,
+      "updated": 1785056893347,
       "link": null,
       "locked": false,
       "points": [
@@ -1705,31 +1765,31 @@
           0
         ],
         [
-          -156.01831021191617,
-          56.97833572342074
+          -219.7889098802952,
+          -37.48240332176965
         ],
         [
-          -340.18194678712405,
-          -84.02689180772632
+          -400.4985445155305,
+          -260.537277052475
         ],
         [
-          -338.5022824041545,
-          -754.1551059580778
+          -377.3744297208982,
+          -901.556148430635
         ],
         [
-          -165.24780625441906,
-          -873.9480771063614
+          -156.6242756653133,
+          -1032.6272952677873
         ]
       ],
       "startBinding": {
         "elementId": "lg028",
-        "focus": -0.8857876892604335,
-        "gap": 1
+        "focus": -0.9616511084925605,
+        "gap": 1.1141985738997024
       },
       "endBinding": {
-        "elementId": "lg004",
-        "focus": 0.784825050787126,
-        "gap": 5.265122382078459
+        "elementId": "lg003",
+        "focus": 0.7237176535919665,
+        "gap": 4.823819106188637
       },
       "startArrowhead": null,
       "endArrowhead": "arrow",
@@ -1738,10 +1798,10 @@
     {
       "id": "lg033",
       "type": "text",
-      "x": 88.92633636176248,
-      "y": 1334.0693537233276,
-      "width": 180,
-      "height": 38,
+      "x": -95.64690508197904,
+      "y": 895.683468564707,
+      "width": 413.4102783203125,
+      "height": 32.5,
       "angle": 0,
       "strokeColor": "#e03131",
       "backgroundColor": "transparent",
@@ -1755,22 +1815,264 @@
       "index": "b8",
       "roundness": null,
       "seed": 201009,
-      "version": 49,
-      "versionNonce": 1628797960,
+      "version": 153,
+      "versionNonce": 752629383,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1781768569308,
+      "updated": 1785056902609,
       "link": null,
       "locked": false,
-      "text": "no: regenerate\n(loop → Node 1 rewrite)",
+      "text": "no: bounded regenerate\n(→ rewrite, intent PINNED, correction_count ≤ max_loop_depth)",
       "fontSize": 13,
       "fontFamily": 5,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "no: regenerate\n(loop → Node 1 rewrite)",
+      "originalText": "no: bounded regenerate\n(→ rewrite, intent PINNED, correction_count ≤ max_loop_depth)",
       "autoResize": true,
       "lineHeight": 1.25
+    },
+    {
+      "id": "lg040",
+      "type": "rectangle",
+      "x": 340,
+      "y": 240,
+      "width": 320,
+      "height": 80,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "#ffd8a8",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "b9",
+      "roundness": {
+        "type": 3
+      },
+      "seed": 101003,
+      "version": 3,
+      "versionNonce": 916471043,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "txt_lg040"
+        }
+      ],
+      "updated": 1785056444705,
+      "link": null,
+      "locked": false
+    },
+    {
+      "id": "txt_lg040",
+      "type": "text",
+      "x": 360,
+      "y": 246.25,
+      "width": 280,
+      "height": 67.5,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "b9t",
+      "roundness": null,
+      "seed": 10002,
+      "version": 3,
+      "versionNonce": 922396065,
+      "isDeleted": false,
+      "boundElements": [],
+      "updated": 1785056444705,
+      "link": null,
+      "locked": false,
+      "text": "route: Intent Router\n(intent -> semantic/structured/\nlong_horizon; model tier; runs once)",
+      "fontSize": 18,
+      "fontFamily": 5,
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "lg040",
+      "originalText": "route: Intent Router\n(intent -> semantic/structured/\nlong_horizon; model tier; runs once)",
+      "autoResize": true,
+      "lineHeight": 1.25
+    },
+    {
+      "id": "lg041",
+      "type": "rectangle",
+      "x": 340,
+      "y": 1520,
+      "width": 320,
+      "height": 100,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "#d0bfff",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "c0",
+      "roundness": {
+        "type": 3
+      },
+      "seed": 101003,
+      "version": 4,
+      "versionNonce": 80572137,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "txt_lg041"
+        }
+      ],
+      "updated": 1785056938499,
+      "link": null,
+      "locked": false
+    },
+    {
+      "id": "txt_lg041",
+      "type": "text",
+      "x": 371.9300842285156,
+      "y": 1525,
+      "width": 256.13983154296875,
+      "height": 90,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "c0t",
+      "roundness": null,
+      "seed": 10002,
+      "version": 5,
+      "versionNonce": 217164233,
+      "isDeleted": false,
+      "boundElements": [],
+      "updated": 1785056938500,
+      "link": null,
+      "locked": false,
+      "text": "suggest: Follow-up Questions\n(2-3 clearance-scoped chips;\nsuppressed if 0 sources or\nrefused)",
+      "fontSize": 18,
+      "fontFamily": 5,
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "lg041",
+      "originalText": "suggest: Follow-up Questions\n(2-3 clearance-scoped chips;\nsuppressed if 0 sources or refused)",
+      "autoResize": true,
+      "lineHeight": 1.25
+    },
+    {
+      "id": "lg044",
+      "type": "arrow",
+      "x": 500,
+      "y": 320,
+      "width": 0,
+      "height": 80,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "c1",
+      "roundness": {
+        "type": 2
+      },
+      "seed": 101010,
+      "version": 3,
+      "versionNonce": 1863959217,
+      "isDeleted": false,
+      "boundElements": [],
+      "updated": 1785056444705,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          80
+        ]
+      ],
+      "startBinding": null,
+      "endBinding": null,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "lastCommittedPoint": null
+    },
+    {
+      "id": "lg045",
+      "type": "arrow",
+      "x": 500,
+      "y": 1470,
+      "width": 0,
+      "height": 50,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "c2",
+      "roundness": {
+        "type": 2
+      },
+      "seed": 101010,
+      "version": 3,
+      "versionNonce": 522630691,
+      "isDeleted": false,
+      "boundElements": [],
+      "updated": 1785056444705,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          50
+        ]
+      ],
+      "startBinding": {
+        "elementId": "lg028",
+        "focus": 0,
+        "gap": 2
+      },
+      "endBinding": {
+        "elementId": "lg041",
+        "focus": 0,
+        "gap": 2
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "lastCommittedPoint": null
     }
   ],
   "appState": {

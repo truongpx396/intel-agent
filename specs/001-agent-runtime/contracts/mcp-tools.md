@@ -1,6 +1,8 @@
 # Contract: MCP Tool Registry
 
-**Plan**: [../plan.md](../plan.md) | Eight scoped tools across three categories, exposed by the FastMCP server (`:8002`) and consumed by the LangGraph agent and compatible local agents. Every tool is **read-only** in Phase 1 (FR-012) — there is no agent-callable crawl/write tool; web crawling runs only inside member-initiated note enrichment (FR-001), not as an agent action. Access is gated by `agent_policies.allowed_tools` per role (FR-011); arguments are validated against the PAT/Actor workspace scope (FR-027).
+**Plan**: [../plan.md](../plan.md) | Eight scoped tools across three categories, exposed by the FastMCP server (`:8002`) and consumed by the LangGraph agent and compatible local agents.
+
+> **One implementation, two exposures.** The tools are a single set of Python implementations. The built-in LangGraph agent calls them **in-process** — direct function calls through the injected `ToolRegistry` (research §19b: "in-process" = shared-library calls, *not* an MCP-protocol client to `:8002`) — while the FastMCP server (`:8002`) wraps the **same** implementations over the MCP protocol for external/local agents. The policy wrapper (`allowed_tools` allowlist, RLS GUCs, `agent_audit_log` + `result_hash`) lives in the shared implementation, not the transport, so both paths get identical access and audit guarantees. See [agent-graph.md — Tool access](./agent-graph.md#tool-access-in-process-impls-one-mcp-server). Every tool is **read-only** in Phase 1 (FR-012) — there is no agent-callable crawl/write tool; web crawling runs only inside member-initiated note enrichment (FR-001), not as an agent action. Access is gated by `agent_policies.allowed_tools` per role (FR-011); arguments are validated against the PAT/Actor workspace scope (FR-027).
 
 ## Category A — Knowledge (semantic, Tier 1)
 
