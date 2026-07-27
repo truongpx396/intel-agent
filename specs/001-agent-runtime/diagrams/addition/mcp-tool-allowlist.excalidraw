@@ -948,13 +948,13 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "Defense-in-depth: (1) Node 0 moderation before any retrieval/spend; (2) retrieved + tool output is DATA,\nnever instructions — the router re-derives the next step from the original classified intent, not from tool\noutput; (3) per-role allowlist gate; (4) read-only toolset in Phase 1. A user-role agent cannot call crawl_url,\nso an injected 'now crawl X' cannot escalate (FR-010 / FR-011 / FR-012, SC-007).",
+      "text": "Defense-in-depth: (1) Node 0 moderation before any retrieval/spend; (2) retrieved + tool output is DATA,\nnever instructions — the router re-derives the next step from the original classified intent, not from tool\noutput; (3) per-role allowlist gate; (4) read tools plus 2 HITL-gated actions (web_search/edit_note); an injected 'now search/edit X'\ncannot run without human approval (FR-010 / FR-011 / FR-012 / FR-040, SC-007).",
       "fontSize": 13,
       "fontFamily": 5,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Defense-in-depth: (1) Node 0 moderation before any retrieval/spend; (2) retrieved + tool output is DATA,\nnever instructions — the router re-derives the next step from the original classified intent, not from tool\noutput; (3) per-role allowlist gate; (4) read-only toolset in Phase 1. A user-role agent cannot call crawl_url,\nso an injected 'now crawl X' cannot escalate (FR-010 / FR-011 / FR-012, SC-007).",
+      "originalText": "Defense-in-depth: (1) Node 0 moderation before any retrieval/spend; (2) retrieved + tool output is DATA,\nnever instructions — the router re-derives the next step from the original classified intent, not from tool\noutput; (3) per-role allowlist gate; (4) read tools plus 2 HITL-gated actions (web_search/edit_note); an injected 'now search/edit X'\ncannot run without human approval (FR-010 / FR-011 / FR-012 / FR-040, SC-007).",
       "autoResize": false,
       "lineHeight": 1.25
     }

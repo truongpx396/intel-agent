@@ -9,8 +9,9 @@ There is **one** `StateGraph` definition. The interactive query path and the dur
 | | Interactive (`intent ∈ {semantic, structured}`) | Durable (`intent = long_horizon`) |
 |---|---|---|
 | Compiled with | no persistent checkpointer (ephemeral in-memory) | Redis checkpointer (`RedisSaver`, AOF) |
-| `agent_run` row | none | one row (SC-009, [data-model.md](./data-model.md) Long-Horizon Task Run) |
+| `agent_run` row | none | one row (SC-009, [data-model.md](../data-model.md) Long-Horizon Task Run) |
 | Iteration | single forward pass | **bounded** iterative re-entry, checkpoint after every node, `credits_cap`-governed |
+| Human-gate (Phase 1) | disabled (no durable approval home) | **enabled** — `human_gate` may `interrupt()` before an index-mutating / outward-reaching step, `status='paused'` (FR-040, [approval-ports.md](./approval-ports.md)) |
 | Correction loop (Phase 2) | disabled | enabled, depth-capped |
 | Heartbeat / janitor | n/a | every 10s + stale-heartbeat re-queue (research §15) |
 
@@ -88,6 +89,14 @@ class AgentState(TypedDict, total=False):
     step: int                        # monotonic; checkpoint boundary index
     correction_count: int            # Phase-2 loop guard; ≤ agent_policies.max_loop_depth
 
+    # --- human-in-the-loop (Phase 1, durable form only) ---
+    pending_approval: dict | None    # {kind, subject, prompt, payload} set by the step to be gated; consumed by human_gate
+    approval_decision: dict | None   # {verdict, resume_value, resolved_by} — HUMAN-authored, injected by Command(resume); NEVER from tool output
+
+    # --- agent actions (Phase 1, durable form only; FR-041) ---
+    needs_web: bool                  # web_search_decide → true when internal context is insufficient/time-sensitive
+    web_results: list[dict]          # distilled web_search results, populated only AFTER the per-fetch approval
+
     # --- observability (SC-005) ---
     debug: dict                      # per-node trace fragments → DebugTrace (sse-events.md)
 ```
@@ -117,9 +126,37 @@ This makes every node unit-testable with fake `deps` and no running infra, and i
 ## Checkpointing & resumption
 
 - **The Redis checkpointer (`RedisSaver`, AOF) is authoritative for graph state.** It is keyed by `thread_id` (= the run's `stream_id` for interactive, `agent_run.id` for durable), plus `checkpoint_ns` / `checkpoint_id`. A checkpoint is written after every node (LangGraph default), so a crash resumes at the last completed node boundary.
-- **`agent_run.state JSONB` is a *pointer*, not the state.** It holds `{ thread_id, checkpoint_ns, checkpoint_id, node: <last completed node name>, step }` plus resume metadata — the durable index (survives a full Redis flush) that lets the worker/janitor **locate** the authoritative Redis checkpoint. It is never the resume payload itself. This resolves the two-store ambiguity in [data-model.md](./data-model.md) Long-Horizon Task Run.
+- **`agent_run.state JSONB` is a *pointer*, not the state.** It holds `{ thread_id, checkpoint_ns, checkpoint_id, node: <last completed node name>, step }` plus resume metadata — the durable index (survives a full Redis flush) that lets the worker/janitor **locate** the authoritative Redis checkpoint. It is never the resume payload itself. This resolves the two-store ambiguity in [data-model.md](../data-model.md) Long-Horizon Task Run.
 - **Resume flow.** The stale-heartbeat janitor conditionally re-queues (`UPDATE agent_run SET status='queued' WHERE id=$1 AND status='running' AND last_heartbeat_at < $2 RETURNING id`, research §15). A worker claiming the re-queued run reads `agent_run.state.thread_id`, loads the latest Redis checkpoint for that thread, and continues from `state.node`.
 - **Checkpoint loss is explicit, never silent.** If the pointer exists but the Redis checkpoint is gone (AOF gap / failover before persist), the run transitions to `failed` with `error='checkpoint_lost'` — it does **not** restart from scratch, because a restart would re-spend credits already settled (SC-006/SC-009). Interactive runs carry no `agent_run` row and are simply re-dispatched by JetStream redelivery (a lost interactive checkpoint is cosmetic).
+
+## Human-in-the-loop: the `human_gate` node (durable form)
+
+The idiomatic LangGraph HITL primitive — **`interrupt()` + `Command(resume=…)`** — is built into the single `StateGraph` in Phase 1 and is the mechanism behind FR-040 and the reusable [approval-ports.md](./approval-ports.md) `HumanGate`. It exists **only in the durable (`long_horizon`) compiled form** because a pause must be recoverable; the interactive form has no durable approval home and disables it, so an interactive query can never silently pause.
+
+| Name | Responsibility | Reads from state | Writes to state |
+|------|----------------|------------------|-----------------|
+| `human_gate` | Guards an index-mutating / sensitivity-raising / outward-reaching step. Opens a durable `approval_request` via `deps.gate`, then `interrupt(payload)` — the run **checkpoints and yields**. On resume it honors the human `approval_decision`: proceed on `approve`/`edit`, or short-circuit (`blocked`, `block_reason='approval_rejected'`) on `reject`/expire. **Spends nothing while paused.** | `pending_approval`, `ctx` | `approval_decision`, `blocked`, `block_reason` |
+
+```python
+from langgraph.types import interrupt, Command
+
+def node_human_gate(state: AgentState, config: RunnableConfig) -> dict:
+    deps = config["configurable"]["deps"]
+    handle = deps.gate.create(state["pending_approval"])   # durable approval_request(status='pending'); ZERO spend
+    decision = interrupt({"approval_id": handle.id, **state["pending_approval"]})  # ← checkpoints + yields; status='paused'
+    if decision["verdict"] == "reject":
+        return {"approval_decision": decision, "blocked": True, "block_reason": "approval_rejected"}
+    return {"approval_decision": decision}                 # approve/edit → next node proceeds past the gate
+```
+
+- **Suspend → resume flow.** `interrupt()` writes a checkpoint and returns control; the run's `agent_run.status` becomes `paused` and the BFF emits an `approval_request` SSE event ([sse-events.md](./sse-events.md)). Resolving via `POST /approvals/{id}/resolve` publishes `agent.resume.<ws>` ([nats-subjects.md](./nats-subjects.md)); the worker loads the paused thread's checkpoint (`agent_run.state.thread_id`) and resumes with `Command(resume=decision)`.
+- **Exactly-once, no re-spend.** Resume re-enters *at* the gate checkpoint, so nodes settled before the gate are not re-run and their spend is never repeated (parity with the `checkpoint_lost` rule and SC-009). A redelivered `agent.resume.<ws>` or a second approve is a no-op — the thread is already past the gate.
+- **Decision provenance.** `approval_decision` is injected by `Command(resume)` from the human's resolution — it is **never** derived from tool/document output (research §5, FR-011). This is why a poisoned page can at worst influence a *draft the human reviews*.
+- **Phase-1 callers of the gate.** The durable form has two always-on state-changing/reach steps in Phase 1 (FR-041), each routing through `human_gate`:
+  - **`web_search_decide`** — after `retrieve`, if internal context is insufficient/time-sensitive it sets `needs_web` and, per intended fetch, sets `pending_approval={kind:'web_search', …}` → `human_gate` → on approve, `web_search` runs the SSRF-guarded `web_distill` and writes `web_results`; on reject it proceeds without web. Available to `user`+`admin` (allowlist).
+  - **`edit_note`** — when the agent proposes a note edit, it sets `pending_approval={kind:'note_edit', subject:{note_id}, payload:{proposed_body}}` → `human_gate` → on approve the write commits (note `body` updated + re-indexed) **only** after the Authorizer `Permit(ActionUpdate)` + `WriteEnvelope` pass with `Clearance=min(agent,owner)`; on reject the note is unchanged.
+  A time-sensitive/reach query the `route` node judges to need the web is classified `long_horizon` so its gate can pause — the interactive form has neither action tool and never pauses. The other two Phase-1 gates (enrich accept, sensitivity confirm) run the same `HumanGate` port through its non-graph (async) shape. All of this is conformance-tested by `ApprovalContract` ([approval-ports.md](./approval-ports.md)).
 
 ## Streaming
 
@@ -147,10 +184,11 @@ Retry/timeout/degradation is declared per node (LangGraph `RetryPolicy` + an exp
 | `memory` | 1 | 5s | Degrade to no memory injected. |
 | `generate` | 1 **pre-first-token only** | 60s | Retry only before the first token is emitted; after streaming starts, do **not** retry (would double-bill/duplicate) — settle partial per [llm-gateway.md](./llm-gateway.md) cancellation rules and mark the run `failed`. |
 | `suggest` | 0 | 8s | Omit `suggestions` (the answer already streamed). |
+| `human_gate` | 0 | none (pauses indefinitely) | Durable form only. Not a failure mode — the run **parks** at a checkpoint (`status='paused'`) with zero spend until resolved; an unresolved gate is auto-expired to fail-closed (`approval.expire.tick`), which ends the run cleanly (`block_reason='approval_rejected'`), never proceeds. |
 
 ## Tool access (in-process impls, one MCP server)
 
-The eight tools ([mcp-tools.md](./mcp-tools.md)) are **one set of implementations, exposed two ways**:
+The ten tools ([mcp-tools.md](./mcp-tools.md)) — eight read-only (Categories A–C) plus the two HITL-gated Category-D action tools (`web_search`, `edit_note`) — are **one set of implementations, exposed two ways**:
 
 - The built-in graph calls the tool **implementations in-process** — direct Python function calls through the injected `ToolRegistry`, no MCP-protocol round-trip (research §19b, "in-process" = shared-library calls, not a client to `:8002`).
 - The FastMCP server (`:8002`) wraps the **same** implementations and exposes them over the MCP protocol for external/local agents.
@@ -165,8 +203,9 @@ Each future node is added to the single `StateGraph` at a **fixed insertion posi
 |------|-------------|----------|--------------------|------|
 | CRAG corrective grading (research §17) | `grade_retrieval` | **after `memory`, before `generate`** | `retrieval_grade`, `abstain` | On weak/empty context: one **bounded** reformulation loop back to `rewrite` **with `intent` pinned** (`route` never re-runs), `correction_count++` capped at `max_loop_depth`; or `abstain`. Re-derives only from `query` + pinned `intent` — **never** from tool/document output (research §5, §17). |
 | Self-RAG faithfulness (research §17) | `grade_answer` | **after `generate`, before `suggest`** | `faithfulness`, `correction_count` | On unfaithful answer: one bounded regenerate under the same pin+cap rule. This is the node the old diagram drew as the post-generate "reflect" loop — now depth-bounded and intent-pinned. |
-| Agent web search (note-enrichment §Phase-2) | `web_search_decide` (+ HITL confirm step) | **after `retrieve`** (branch when internal context is insufficient/time-sensitive) | `needs_web`, `web_results` | Per-search human-in-the-loop confirmation before each fetch; wraps the existing `web_distill`. Adds `web_search` to `allowed_tools` for `user`+`admin`. |
 | Complexity-based model routing (research §22) | *(extends `route`)* | in-place | *(none — sets existing `model_alias`)* | A RouteLLM classifier inside `route` picks the alias from a complexity signal; stays app-side + observable, eval-gated. No new node. |
+
+> **`web_search` is now Phase 1, not a seam.** The agent web-search (`web_search_decide` + `web_search` action) and the scoped `edit_note` write are **built in Phase 1** as the durable form's two HITL-gated action tools (FR-041; [Human-in-the-loop](#human-in-the-loop-the-human_gate-node-durable-form) above), no longer a Phase-2 addition. The remaining seams here (CRAG `grade_retrieval`, Self-RAG `grade_answer`, complexity routing) stay Phase 2.
 
 The regenerate loops exist **only** in the `long_horizon` compiled form (the interactive form disables them), so an interactive query can never silently fan out into multiple LLM round-trips.
 
@@ -192,6 +231,8 @@ What does **not** travel with the graph and must be re-satisfied by the host's o
 - **Fail-closed guard**: a moderation-provider timeout blocks the query (`error`), spends zero credits (SC-007), and never proceeds to `retrieve`.
 - **Reliability**: a `rerank` provider outage degrades to RRF order and still produces a cited answer; a `retrieve` outage fails the run; a `memory` outage produces an answer with `memories == []`.
 - **In-process tool parity**: a tool call through the in-process `ToolRegistry` writes exactly one `agent_audit_log` row with a `result_hash`, identical to the same tool called via `:8002` (FR-023, research §19).
+- **Human-gate interrupt/resume** (durable form): a `long_horizon` run reaching `human_gate` interrupts (checkpoints, `status='paused'`), spends **zero** credits while paused, and on `Command(resume=decision)` continues **exactly once** from the gate checkpoint (no settled node re-runs, no re-spend); a `reject` decision short-circuits with `block_reason='approval_rejected'` and never mutates the index; the `approval_decision` is the injected human value, never derived from tool output (FR-040, SC-014; the graph half of the `ApprovalContract`, [approval-ports.md](./approval-ports.md)).
+- **Agent action tools** (durable form, FR-041): `web_search_decide` performs **no** fetch until the per-search gate is approved (a reject writes no `web_results` and spends nothing for the fetch); `edit_note` commits the note update **only** after approval **and** an Authorizer `Permit(ActionUpdate)`+`WriteEnvelope` pass with `Clearance=min(agent,owner)` — an edit above clearance / outside workspace is denied (`not_found`), one that would raise `access_level` above the source floor is denied (`envelope_widens`), and a create attempt is refused (SC-015). Neither tool exists in the interactive compiled form.
 
 ---
 
