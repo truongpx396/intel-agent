@@ -218,7 +218,8 @@ def node_human_gate(state: AgentState, config: RunnableConfig) -> dict:
     deps = config["configurable"]["deps"]
     pending = state["pending_approval"]              # {kind, subject, prompt, payload} — set by the prior node
 
-    # 1) record a DURABLE pending gate (idempotent on the run+step idem_key). ZERO spend here.
+    # 1) record a DURABLE pending gate. RE-RUNS on resume (see sharp edge below) → MUST be
+    #    idempotent on the run+step idem_key. ZERO spend / ZERO mutation may sit before interrupt().
     handle = deps.gate.create(pending)               # → approval_request(kind='long_horizon_action', status='pending')
 
     # 2) SUSPEND: checkpoint + yield. The run's status becomes 'paused'; the BFF emits an
@@ -240,7 +241,9 @@ Suspend / resume / durability mapping:
 | resolve | (out of graph) | `approval_request(status='approved'\|'rejected')` + `audit_log` | `POST /approvals/{id}/resolve` |
 | resume | `Command(resume=decision)` | run re-enters at the checkpoint, `status='running'` | `agent.resume.<ws>` → worker loads the checkpoint |
 
-The BFF `POST /approvals/{id}/resolve` publishes `agent.resume.<ws>` (payload `{run_id, approval_id, decision, …}`, [nats-subjects.md](./nats-subjects.md)); the long-horizon worker loads the paused run's checkpoint by `agent_run.state.thread_id` and resumes with `Command(resume=decision)`. Because resume re-enters *at* the checkpoint, invariant 6 holds by construction — the settled nodes before the gate are not re-run and their spend is not repeated. **This capability exists only in the durable compiled form**; the interactive form has no durable approval home and disables `human_gate`, so an interactive query can never silently pause (design thesis, [agent-graph.md](./agent-graph.md)).
+The BFF `POST /approvals/{id}/resolve` publishes `agent.resume.<ws>` (payload `{run_id, approval_id, decision, …}`, [nats-subjects.md](./nats-subjects.md)); the long-horizon worker loads the paused run's checkpoint by `agent_run.state.thread_id` and resumes with `Command(resume=decision)`. Because resume re-enters *at* the checkpoint, invariant 6 holds *across nodes* — the settled nodes before `human_gate` are not re-run and their spend is not repeated. **This capability exists only in the durable compiled form**; the interactive form has no durable approval home and disables `human_gate`, so an interactive query can never silently pause (design thesis, [agent-graph.md](./agent-graph.md)).
+
+> **Implementation sharp edge — the interrupted node's prefix re-executes on resume.** LangGraph resumes an interrupted node by **re-running it from the top** up to the `interrupt()` call; the graph does *not* snapshot mid-function. So everything *before* `interrupt()` — here, `deps.gate.create(...)` — runs **twice**: once when the gate opens, once on resume. Two rules make this safe, and they are load-bearing, not incidental: (1) `ApprovalStore.Create` MUST be **idempotent** on the run+step `IdemKey` (invariant 1), so the second run returns the same `Handle` rather than opening a duplicate gate; and (2) **no credit `billing.deduct` and no resource mutation may sit in the node prefix** — spend and mutation belong strictly *after* the `interrupt()` (invariant 2), so the double-executed prefix has no billable or state-changing effect. An implementer who puts a non-idempotent side effect (a second ledger write, an un-keyed insert, an outbound call) before the `interrupt()` breaks exactly-once. Node granularity is the unit of "settled"; *within* the gate node, treat only the code after `interrupt()` as run-once. (This mirrors the same re-entrancy discipline Temporal/Step-Functions activities require, and is documented LangGraph `interrupt` behavior.)
 
 ---
 

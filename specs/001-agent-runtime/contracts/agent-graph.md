@@ -144,6 +144,8 @@ from langgraph.types import interrupt, Command
 def node_human_gate(state: AgentState, config: RunnableConfig) -> dict:
     deps = config["configurable"]["deps"]
     handle = deps.gate.create(state["pending_approval"])   # durable approval_request(status='pending'); ZERO spend
+    # NB: on resume LangGraph re-runs this node from the top up to interrupt(), so `create` executes
+    #     twice → it MUST be idempotent and no spend/mutation may precede interrupt() (approval-ports.md "sharp edge")
     decision = interrupt({"approval_id": handle.id, **state["pending_approval"]})  # ← checkpoints + yields; status='paused'
     if decision["verdict"] == "reject":
         return {"approval_decision": decision, "blocked": True, "block_reason": "approval_rejected"}
