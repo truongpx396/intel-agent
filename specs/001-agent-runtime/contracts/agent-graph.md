@@ -39,6 +39,8 @@ Phase-1 edge order (semantic path):
 `START → guard → route → rewrite → retrieve → rerank → assemble → memory → generate → suggest → END`
 `guard` blocked ⇒ `START → guard → END` (single `error`, no spend). `structured` intent ⇒ `rewrite` normalizes, `retrieve` calls a fixed tool instead of vector search. `route` is the only conditional-branch source in Phase 1.
 
+> **Per-query gateway-call count (capacity planning note).** One interactive query is **not** one LLM-gateway call. The semantic path issues **≈4–5** calls — `route` (intent + model-tier classify), `rewrite` (BAML expansion), `rerank` (cross-encoder via the `rerank` alias), `generate`, plus any model use inside `memory` — and ingestion adds `embed` calls per chunk. The `structured` path is lighter (skips vector `rerank`). This is the **call-amplification factor** every provider-quota, key-pool-sizing, rate-limit, and `$/QPS` estimate must apply to the *query* rate before comparing against provider limits: `route`+`rewrite`+`rerank`+`generate` means thousands of query/s ≈ 4–5× that in provider calls/s. The gateway's multi-key LB scales throughput, but the provider quota it balances across is sized against the **amplified** call rate ([llm-gateway.md](./llm-gateway.md), [research §21](../research.md), [phase-4 load/SLO plan](../../draft-plan.md#9-load--soak-testing-harness)).
+
 ## AgentState schema
 
 The single source of truth for what flows through the graph. Additive by construction: a new node adds keys; it never changes the meaning of an existing key. `ctx` (the security context) is **stamped by the BFF into the NATS payload and set read-only** — no node may widen clearance or re-derive identity from tool output (research §5).
