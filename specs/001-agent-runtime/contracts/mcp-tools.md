@@ -92,3 +92,13 @@ These ten tools are the **shared knowledge + action layer** — consumed by both
 >   capability with a wider `write_ops`/`write_artifact_types`. Any UI that lists the broader
 >   tools must mark them as future-phase so it never implies a capability this server will
 >   refuse. See [Agent Access & Accountability](../../draft-plan.md#phase-2--agent-access--accountability).
+> - **Sandbox-backed code-gen / file-manipulation tools** (`run_script`, `transform_files`) —
+>   Category-D actions whose *implementation* runs agent-**generated** code inside an ephemeral,
+>   network-isolated microVM (`tmpl-coderun`) over the `Sandbox` port ([sandbox-runtime.md](./sandbox-runtime.md)),
+>   never on a worker pod. They carry the **same** governance as every Category-D action:
+>   off-by-default per role, `agent_policies.can_write` + `allowed_tools`, HITL-gated
+>   (`approval_request(kind='run_script')` — execute nothing until approved), access-bounded
+>   (files staged in from S3 at `min(agent, owner)` clearance, output re-enters only via the
+>   accept gate), metered (`operation_type='sandbox.run_script'`), and audited (`sandbox_run` +
+>   `agent_audit_log`). The microVM never holds a provider key or DB/Qdrant access — generated
+>   code that needs AI/knowledge calls back through the LLM Gateway / MCP chokepoint only.
