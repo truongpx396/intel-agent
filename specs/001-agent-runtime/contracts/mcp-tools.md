@@ -94,11 +94,40 @@ These ten tools are the **shared knowledge + action layer** — consumed by both
 >   refuse. See [Agent Access & Accountability](../../draft-plan.md#phase-2--agent-access--accountability).
 > - **Sandbox-backed code-gen / file-manipulation tools** (`run_script`, `transform_files`) —
 >   Category-D actions whose *implementation* runs agent-**generated** code inside an ephemeral,
->   network-isolated microVM (`tmpl-coderun`) over the `Sandbox` port ([sandbox-runtime.md](./sandbox-runtime.md)),
->   never on a worker pod. They carry the **same** governance as every Category-D action:
->   off-by-default per role, `agent_policies.can_write` + `allowed_tools`, HITL-gated
->   (`approval_request(kind='run_script')` — execute nothing until approved), access-bounded
+>   credential-free, network-isolated sandbox (`tmpl-coderun`) over the `Sandbox` port
+>   ([sandbox-runtime.md](./sandbox-runtime.md)) — never in the agent process. Its boundary is
+>   **gVisor + `max_runs=1`** on the ordinary per-job path; a microVM is stronger but **not
+>   required** (research §24). Governance follows the Category-D rules — off-by-default per
+>   role, `agent_policies.can_write` + `allowed_tools`, access-bounded
 >   (files staged in from S3 at `min(agent, owner)` clearance, output re-enters only via the
 >   accept gate), metered (`operation_type='sandbox.run_script'`), and audited (`sandbox_run` +
->   `agent_audit_log`). The microVM never holds a provider key or DB/Qdrant access — generated
+>   `agent_audit_log`). The sandbox never holds a provider key or DB/Qdrant access — generated
 >   code that needs AI/knowledge calls back through the LLM Gateway / MCP chokepoint only.
+> - **`transform_files` writes back IN PLACE, with versioning.** An approved run replaces the
+>   document's current content and retains the prior bytes as a `document_versions` row
+>   ([data-model.md](../data-model.md)) — append-only, so an approved-then-regretted edit is always
+>   recoverable. Three rules: `access_level` is **never** changed by an agent edit (`WriteEnvelope`
+>   floor, `min(agent, owner)` clearance); `created_by_user_id` is the **approving member**, never
+>   the agent, so content still changes only through an authenticated human context (FR-004's
+>   principle); and the re-index **replaces** rather than appends — the superseded version's chunks
+>   are deleted in the same idempotent unit that indexes the new one. **Rollback is a member action,
+>   never an agent tool** — otherwise an agent could launder a rejected edit by restoring a version
+>   it authored.
+> - **The approval payload must derive from the bytes, not from the model.** FR-040 requires the
+>   human decision to originate from the approver and **not** be derived from model, tool, or
+>   document output. An `.xlsx` is not human-readable, so an approver shown only "the agent says it
+>   updated the Q3 totals" is approving a *claim*. The gate MUST present the script source, a
+>   **rendered diff** (both versions converted through `tmpl-convert` to Markdown, then diffed), and
+>   a structured change summary computed from the two artifacts. Without this the HITL gate on
+>   binary documents degrades into a rubber stamp.
+> - **HITL granularity differs by what the run does** (FR-040's own three criteria, see
+>   [sandbox-runtime.md](./sandbox-runtime.md) invariant 5): `transform_files` **writes**, so it is
+>   gated **per run**. A **read-only** `run_script` (`files_out = []`, egress denied, read-only
+>   working set) mutates nothing, reaches nowhere, and reads only what the actor was already
+>   authorised to read — so it is approved **per analysis session**, letting the agent iterate
+>   (write → run → read traceback → fix) without a human approval per attempt. Requesting
+>   `files_out`, egress, or any write makes it a `transform_files` action and re-arms the per-run gate.
+> - **The sandbox image is the dependency contract.** Egress is denied, so there is no runtime
+>   `pip install`: this tool's description MUST enumerate the available libraries (pandas, numpy,
+>   pyarrow, openpyxl, xlrd, python-docx, pypdf, pillow, matplotlib) or the model will generate
+>   imports that do not resolve. Changing that set is a tool-contract change.
