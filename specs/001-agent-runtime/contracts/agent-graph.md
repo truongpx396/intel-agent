@@ -50,13 +50,21 @@ from typing import Annotated, Literal, TypedDict
 from operator import add
 
 class SecurityCtx(TypedDict):        # set once from the NATS payload; never mutated by a node
-    workspace_id: str
-    user_id: str
-    effective_access_level: int      # requester's CURRENT clearance, evaluated at read time
-    agent_role: Literal["user", "admin", "automation", "integration"]
+    # --- domain-agnostic core: the graph/runtime reads ONLY these opaque fields ---
+    tenant: str                      # opaque tenant key (AISAT binds it from the payload's workspace_id)
+    principal: str                   # opaque principal key (AISAT binds it from the payload's user_id)
+    agent_role: str                  # product-defined role label the allowlist is keyed on
+                                     #   (AISAT: user|admin|automation|integration); the runtime never
+                                     #   interprets its value, only passes it to the tool policy wrapper
     allowed_tools: list[str]         # read from agent_policies; never hardcoded (research §19)
     trace_id: str
     stream_id: str                   # streaming key; the graph never touches Redis with it (see Streaming)
+    # --- domain claims: OPAQUE to the runtime; read ONLY by injected deps, never by a node ---
+    claims: dict                     # product-specific authorization facts, flowed through ctx into deps.
+                                     #   AISAT stamps {"effective_access_level": int} — the requester's
+                                     #   CURRENT clearance on the 1–5 ladder, evaluated at read time (SC-001).
+                                     #   A support bot might stamp {"customer_id": …}; edu-ops {"course_ids": […]}.
+                                     #   NO graph node dereferences claims — only the injected deps do.
 
 class AgentState(TypedDict, total=False):
     # --- inputs (read-only after START) ---
@@ -104,6 +112,15 @@ class AgentState(TypedDict, total=False):
 ```
 
 **Reducer semantics.** Only `tool_calls` uses a non-default reducer (`operator.add`, append-only) because a long-horizon run accrues tool calls across re-entries and none may be lost for audit (FR-023). Every other key uses last-writer-wins (the default): each key has exactly one owning node, so there is no write contention. `intent`/`model_alias` are written only by `route` and are treated as immutable — enforced by convention and a unit test, not by a reducer.
+
+### Domain-agnostic security context (reusability seam)
+
+`SecurityCtx` is split into two tiers so the graph lifts into another product unchanged — the counterpart, inside the Python tier, to the way [authorizer-ports.md](./authorizer-ports.md) already factors the *decision engine* out of the AISAT clearance model:
+
+- **The domain-agnostic core** (`tenant`, `principal`, `agent_role`, `allowed_tools`, `trace_id`, `stream_id`) is all the *runtime* reads. `tenant`/`principal` are opaque tenant/principal keys — AISAT binds them from the `workspace_id`/`user_id` of the NATS payload; `agent_role` is an opaque label the `allowed_tools` allowlist is keyed on. No node interprets their *values*.
+- **The `claims` bag** carries every product-specific authorization fact. AISAT stamps `{"effective_access_level": int}` (the 1–5 clearance ladder, SC-001); another product stamps whatever *its* access model needs (`customer_id`, `course_ids`, an RBAC role set). **The runtime never dereferences `claims`** — it flows `ctx` (claims included) into the injected deps (`RetrievalService`, `MemoryService`, `ToolRegistry`, and, at the host, the `Authorizer`), which are the *only* code that reads a domain claim and lowers it into a store filter (RLS GUCs, Qdrant payload pre-filter).
+
+This is what makes the clearance model swappable without touching the graph: replacing `SingleAxisPolicy` ([authorizer-ports.md](./authorizer-ports.md)) with a per-customer or role×course policy changes only the deps that read `claims`, not the nodes. Wherever this contract and its cross-references say `effective_access_level`, the value lives at `ctx.claims["effective_access_level"]`; the BFF maps the `effective_access_level` field of the `query.agent` / `enrich.note` NATS payload ([nats-subjects.md](./nats-subjects.md)) into that claim when it stamps `ctx`. Likewise `ctx.tenant`/`ctx.principal` are bound from the payload's `workspace_id`/`user_id`: the concrete `workspace_id == ctx AND user_id == ctx` payload/RLS predicates in [mcp-tools.md](./mcp-tools.md) and [data-model.md](../data-model.md) are those bindings evaluated **inside the AISAT deps** against the real Qdrant payload keys / `app.*` GUCs — they are not fields the graph reads, and the Qdrant/RLS field names stay concrete (renaming a payload key would be a schema change, not a runtime abstraction).
 
 ## Dependency injection
 
@@ -190,14 +207,15 @@ Retry/timeout/degradation is declared per node (LangGraph `RetryPolicy` + an exp
 | `suggest` | 0 | 8s | Omit `suggestions` (the answer already streamed). |
 | `human_gate` | 0 | none (pauses indefinitely) | Durable form only. Not a failure mode — the run **parks** at a checkpoint (`status='paused'`) with zero spend until resolved; an unresolved gate is auto-expired to fail-closed (`approval.expire.tick`), which ends the run cleanly (`block_reason='approval_rejected'`), never proceeds. |
 
-## Tool access (in-process impls, one MCP server)
+## Tool access (a `ToolRegistry` port: in-process impls, one MCP server, or a remote MCP client)
 
-The ten tools ([mcp-tools.md](./mcp-tools.md)) — eight read-only (Categories A–C) plus the two HITL-gated Category-D action tools (`web_search`, `edit_note`) — are **one set of implementations, exposed two ways**:
+The ten tools ([mcp-tools.md](./mcp-tools.md)) — eight read-only (Categories A–C) plus the two HITL-gated Category-D action tools (`web_search`, `edit_note`) — are reached through the **`ToolRegistry` port**, whose binding is selected by config (`tools.kind`) so the graph is **tool-source-agnostic**:
 
-- The built-in graph calls the tool **implementations in-process** — direct Python function calls through the injected `ToolRegistry`, no MCP-protocol round-trip (research §19b, "in-process" = shared-library calls, not a client to `:8002`).
-- The FastMCP server (`:8002`) wraps the **same** implementations and exposes them over the MCP protocol for external/local agents.
+- `inprocess` (default): the built-in graph calls the tool **implementations in-process** — direct Python function calls through the injected `ToolRegistry`, no MCP-protocol round-trip (research §19b, "in-process" = shared-library calls, not a client to `:8002`). Enforcement is the shared policy wrapper in that same library.
+- The FastMCP server (`:8002`) wraps the **same** implementations and exposes them over the MCP protocol for external/local agents (the outbound door).
+- `mcp_client`: the **same unmodified graph** consumes a **remote** domain MCP server as its tool source (a `url` + a device PAT from config, the inbound-as-client door). Here enforcement lives at **that remote server's own boundary** ([mcp-tools.md](./mcp-tools.md) §Own enforcement boundary) — it sets its RLS GUCs from the PAT and applies its allowlist + audit. A thin, config-only agent thus adapts to a domain **without a code change** when a compliant domain server already exists; the agent config selects a tool *source*, never the access boundary.
 
-Both paths run every call through the **same policy wrapper** — `allowed_tools` allowlist check, `app.workspace_id`/`app.user_id`/`app.clearance` RLS GUCs set from the Actor, and the `agent_audit_log` write with `result_hash` — because that enforcement lives in the shared implementation, not the transport (research §19). "In-process MCP" therefore means *shared tool library*, and the built-in agent and an external agent get identical access and audit guarantees.
+The in-process and `:8002` paths run every call through the **same policy wrapper** — `allowed_tools` allowlist check, `app.workspace_id`/`app.user_id`/`app.clearance` RLS GUCs set from the Actor, and the `agent_audit_log` write with `result_hash` — because that enforcement lives in the shared implementation, not the transport (research §19). The `mcp_client` path delegates the identical wrapper to the remote server it points at. In every case the floor is enforced **below the tool**, so the built-in agent, an external agent, and a config-only agent pointed at a remote domain server all get identical access and audit guarantees.
 
 ## Phase-2 additive seams
 
@@ -211,25 +229,31 @@ Each future node is added to the single `StateGraph` at a **fixed insertion posi
 
 > **`web_search` is now Phase 1, not a seam.** The agent web-search (`web_search_decide` + `web_search` action) and the scoped `edit_note` write are **built in Phase 1** as the durable form's two HITL-gated action tools (FR-041; [Human-in-the-loop](#human-in-the-loop-the-human_gate-node-durable-form) above), no longer a Phase-2 addition. The remaining seams here (CRAG `grade_retrieval`, Self-RAG `grade_answer`, complexity routing) stay Phase 2.
 
+> **Background self-improvement review is a Phase-2 seam, gated exactly like an action tool.** Autonomous, cross-session memory/skill writes — an LLM replaying a *finished* run (cache-warm, optionally on a cheaper model) and **proposing** what to persist — are **not** in Phase 1. When built, the review pass **stages** its writes (`pending/`) behind the **same HITL approval gate** as the durable form's Category-D action tools (`human_gate`, [approval-ports.md](./approval-ports.md)) and records them on the **same** `agent_audit_log` trail: "doing the task" and "reflecting on what to persist" stay **separate passes**, and the reflection never mutates memory without a human-approvable (or policy-gated) decision. This keeps the "self-improving" loop inside the existing fail-closed write path (SC-001/SC-015) rather than a new privileged side-channel — and it is a *reflection* pass, never a mutation of the live system prompt (the frozen-prefix invariant, [Contract test obligations](#contract-test-obligations), holds within a session; a review write takes effect on the *next* session).
+
 The regenerate loops exist **only** in the `long_horizon` compiled form (the interactive form disables them), so an interactive query can never silently fan out into multiple LLM round-trips.
 
 ## Extraction checklist
 
 To run this graph as a standalone microservice in another system, the host must provide (and *only*) these — the boundary is the `AgentDeps` struct plus the security contract, nothing else:
 
-1. **Inputs**: an `AgentState` seed (`query`, `history`, `ctx`) — `ctx` stamped by the host's trusted layer, never the client (research §5).
-2. **`AgentDeps`**: a `RetrievalService` (any vector store with the two-collection clearance-filter semantics), a `MemoryService` (or a no-op — `memory` degrades cleanly), an `LLMGatewayClient` (any OpenAI-wire endpoint), a `ToolRegistry`, and a `StreamWriter`.
+1. **Inputs**: an `AgentState` seed (`query`, `history`, `ctx`) — `ctx` stamped by the host's trusted layer, never the client (research §5). The host fills the domain-agnostic core (`tenant`/`principal`/`agent_role`/`allowed_tools`/`trace_id`/`stream_id`) and its own `claims` bag; the graph reads only the core and passes `claims` opaquely into the host's deps, so a different access model travels entirely in `claims` + the host's `Authorizer`/`RetrievalService`, never in a node edit.
+2. **`AgentDeps`**: a `RetrievalService` (any vector store with the two-collection clearance-filter semantics), a `MemoryService` (or a no-op — `memory` degrades cleanly), an `LLMGatewayClient` (any OpenAI-wire endpoint), a `ToolRegistry` (config-selected `tools.kind`: `inprocess` shared-library, or `mcp_client` pointing at a remote domain MCP server), and a `StreamWriter`.
 3. **A checkpointer** for the durable form (`RedisSaver` or any LangGraph `BaseCheckpointSaver` — Postgres/SQLite work unchanged).
 4. **A stream adapter** for the host's transport (the Redis-pub/sub one is AISAT-specific and stays behind the boundary).
 
 What does **not** travel with the graph and must be re-satisfied by the host's own layers: credit metering (`billing.deduct`), the RLS GUC plumbing, and the moderation provider behind `guard`. These are enforcement concerns wired at the host root, exactly as they are here — the graph declares *that* they run (via `guard` and the tool policy wrapper), not *how* the host bills or authenticates.
 
+> **Composition layer.** *This* checklist proves the graph is extractable; how a whole agent is *composed and deployed* on top of it — an `AgentManifest` (config: prompts, tools, models, retrieval, channels, budgets) plus a thin `DomainPlugin` (code: tool bodies + `Authorizer` `Policy`), run as stateless workers of one image — is [agent-runtime.md](./agent-runtime.md). A new domain is a manifest swap + plugin, never a node edit; config *selects* a `Policy`, never *is* one, so the RLS/Qdrant floor (SC-001) is identical for every manifest.
+
 ## Contract test obligations
 
 - **State immutability**: no node other than `route` writes `intent`/`model_alias`; a run's `intent` is identical at `generate` and at `route` (unit test over all nodes).
+- **Stable instruction prefix** (prompt-cache economics): the **static instruction prefix** emitted by `generate` (persona + tool descriptions + `<retrieved_document>` framing + response-format assets) is **byte-identical** across turns of a durable (`RedisSaver`) run — no node mutates the cached prefix mid-session. The clearance-filtered `memories` and retrieved `context` are appended **after** the frozen prefix and re-evaluated **every** turn against current clearance, so the snapshot freezes the *instructions* only and never weakens SC-001 (a demotion still takes effect next turn). Guards both the prefix-cache cost model and against per-turn state leaking into the prefix (T060h).
 - **Additivity**: adding a Phase-2 node (a no-op `grade_retrieval` stub) changes no existing node's output on a golden query (regression test) — proves the seams.
 - **Reducer**: `tool_calls` accumulates across a two-re-entry `long_horizon` run; a last-writer-wins key does not.
 - **Node isolation**: each node runs green in a unit test with a fake `AgentDeps` and no infra (guard/route/rewrite/rerank/assemble/memory/generate/suggest).
+- **Domain-agnostic ctx** (reusability seam): a static check (AST/import scan over `nodes/`) asserts no node module dereferences `ctx["claims"]` or any product claim key (e.g. `effective_access_level`) — only `deps.*` may. Complementarily, the graph runs green end-to-end on a `ctx` whose `claims` bag holds an **opaque test-only key** (with fake `RetrievalService`/`ToolRegistry`), proving the runtime never depends on a specific claim shape — the graph half of the extraction guarantee, in the same "prove reuse with a second fixture" spirit as the `PricerContract`/`HashChainContract` tests.
 - **Checkpoint pointer**: after a mid-run crash, `agent_run.state.thread_id` locates a Redis checkpoint whose `node` matches the last completed node; a missing checkpoint transitions the run to `failed('checkpoint_lost')`, never a silent restart (SC-006, SC-009).
 - **Streaming decoupling**: `graph.astream_events` yields `token` events for a happy-path query with **no Redis client bound** (the adapter is absent in the test) — proving no node touches Redis.
 - **Fail-closed guard**: a moderation-provider timeout blocks the query (`error`), spends zero credits (SC-007), and never proceeds to `retrieve`.
