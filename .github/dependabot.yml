@@ -1,0 +1,33 @@
+# Dependabot keeps action pins, base images, and lockfiles current.
+# It also converts/maintains the commit-SHA pins the devops standard requires
+# (.github/instructions/devops-cicd.instructions.md). Directories that do not
+# exist yet are simply skipped until their manifests land.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ['*'] }
+
+  - package-ecosystem: docker
+    directories:
+      - /backend-go
+      - /backend-python
+      - /frontend
+    schedule: { interval: weekly }
+
+  - package-ecosystem: gomod
+    directory: /backend-go
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: uv
+    directory: /backend-python
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5

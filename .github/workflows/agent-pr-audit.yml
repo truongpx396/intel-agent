@@ -1,0 +1,294 @@
+name: agent-pr-audit
+
+# Closes the two gaps the agent's own tooling structurally cannot close.
+#
+# 1. WHOLESALE SKIP. track-audit.sh catches a run that missed a step. It cannot catch a run
+#    that skipped the BUNDLE — no preflight, no run record, so track-report.sh renders
+#    nothing and the PR body is entirely hand-authored. Nothing then flags that the machine-
+#    verified half is absent, and a reviewer has to notice an absence. That is the exact
+#    failure the skill's own checklist names: "a missing line is indistinguishable from a
+#    skipped check." A reporter cannot report on its own absence, so the check lives here.
+#
+# 2. SELF-APPLIED SCOPE. This gate used to fire ONLY on the `agent-generated` label — which
+#    the agent attaches to its own PR at `gh pr create`. A run that skipped the bundle also
+#    skips the labeling step, so the one PR that most needed auditing was the one that
+#    silently opted itself out. Scope is now the UNION of five signals (see `detect`), and
+#    the load-bearing one — the harness-written `Co-Authored-By` trailer — is stamped at
+#    commit time by the coding-agent harness, upstream of and independent from this skill,
+#    so the pipeline cannot suppress it from the inside.
+#
+# SCOPE: agent-authored PRs only. Human PRs stay untouched — a blanket rule would fail every
+# hand-written PR and be switched off within a week, and a gate nobody can live with
+# protects nothing.
+#
+# META-WORK EXEMPTION: a PR whose every changed file is tooling (META_PATHS_RE) is
+# maintenance ON this pipeline rather than work done THROUGH it — it cannot produce a run
+# record, so the Auto-block requirement is unsatisfiable by construction. Those PRs waive
+# the block's PRESENCE only, never its integrity, and the waiver announces itself in the job
+# summary. A permanently-red check is worse than a scoped one: it trains people to ignore it.
+#
+# RESIDUALS (stated, not papered over):
+#   - A PR with no label, no agent trailer, no bot author, no agent branch prefix and no
+#     track-report marker is indistinguishable from human work here, and is skipped. Closing
+#     that needs a signal from outside the PR — a dedicated bot identity for agent pushes, or
+#     branch protection — not more parsing.
+#   - The exemption is a surface an agent could aim for by scoping its diff to tooling only.
+#     That buys no product-code cover (a meta-only PR changes no product code by definition),
+#     but it DOES cover edits to the gates themselves — so the waiver flags that case loudly
+#     rather than pretending it cannot happen.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, labeled, unlabeled, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  # Per-repo tunables. Override these rather than editing the logic below.
+  AGENT_LABEL: agent-generated
+  AGENT_TRAILER_RE: '^[[:space:]]*Co-Authored-By:.*(claude|copilot|cursor|devin|codex|gemini)'
+  AGENT_BRANCH_RE: '^(track|agent|claude|codex|copilot|devin)/'
+  # Tooling paths. A PR touching ONLY these is maintenance ON the pipeline rather than work
+  # done THROUGH it, and cannot produce a run record — see the meta-work exemption below.
+  # CHANGELOG.md belongs here for the same reason README.md does, and its omission had a
+  # sharp edge: EVERY release PR must edit the changelog, and a release also produces no run
+  # record — so release PRs could satisfy neither the exemption nor the Auto-block
+  # requirement. That is an unsatisfiable rule, and an unsatisfiable rule gets bypassed
+  # rather than obeyed. install.sh belongs here for the identical reason: it is the
+  # installer for this repo's own tooling, not product code, and a release PR touching it
+  # (this repo's own v0.4.0 release PR is what caught the gap) hit the same unsatisfiable
+  # rule. Adding either widens nothing else: the waiver still fires only when every file
+  # matches, still waives presence and never integrity, and a release PR that touches the
+  # gates still gets the GATE_PATHS_RE warning below.
+  META_PATHS_RE: '^(\.github/(skills|workflows|instructions|hooks)/|README\.md$|CHANGELOG\.md$|CLAUDE\.md$|\.gitignore$|install\.sh$)'
+  # The subset of tooling that IS the enforcement. A waived PR touching these is weakening
+  # the gates while exempt from them, so the waiver names it explicitly.
+  GATE_PATHS_RE: '(track-audit\.sh|track-report\.sh|track-compact\.sh|track-brief\.sh|track-evidence-gate\.sh|track-guard\.sh|agent-pr-audit\.yml)'
+
+jobs:
+  # ── Is this an agent PR? Decided from signals the agent does not all control. ──────────
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      is_agent: ${{ steps.d.outputs.is_agent }}
+      labeled: ${{ steps.d.outputs.labeled }}
+      why: ${{ steps.d.outputs.why }}
+      meta_only: ${{ steps.d.outputs.meta_only }}
+      touches_gates: ${{ steps.d.outputs.touches_gates }}
+      files_n: ${{ steps.d.outputs.files_n }}
+    steps:
+      - id: d
+        env:
+          # Every value below is attacker-controlled to some degree (a fork picks its own
+          # branch name, commit messages and PR body), so all of it arrives through the
+          # environment. `${{ }}` inside a run block is a shell-injection sink.
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -uo pipefail
+          is_agent=false; labeled=false; why=""
+          mark() { is_agent=true; why="${why:+$why; }$1"; }
+
+          # 1 — the explicit label. Still honored, still the cheapest signal; it is simply no
+          #     longer the ONLY one, because the subject applies it to itself.
+          if printf '%s' "${LABELS_JSON:-[]}" \
+             | jq -e --arg l "$AGENT_LABEL" 'any(.[]?; . == $l)' >/dev/null 2>&1; then
+            labeled=true; mark "label '$AGENT_LABEL'"
+          fi
+
+          # 2 — THE load-bearing signal. The Co-Authored-By trailer is written by the coding-
+          #     agent harness at commit time, not by the skill, so a run that never activated
+          #     the bundle at all still carries it.
+          msgs="$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/commits" \
+                    --jq '.[].commit.message' 2>/dev/null || true)"
+          if [ -z "$msgs" ]; then
+            echo "::warning::Could not read PR commits from the API — the commit-trailer signal is unavailable for this run, so detection fell back to the weaker signals."
+          elif printf '%s\n' "$msgs" | grep -qiE "$AGENT_TRAILER_RE"; then
+            mark "agent Co-Authored-By trailer in a PR commit"
+          fi
+
+          # 3 — a bot identity, for setups where the agent opens PRs under its own account
+          #     rather than borrowing a human's gh token.
+          if [ "${AUTHOR_TYPE:-}" = "Bot" ] || printf '%s' "${AUTHOR:-}" | grep -qiE '\[bot\]$'; then
+            mark "PR author '$AUTHOR' is a bot"
+          fi
+
+          # 4 — an agent branch prefix (sso-executing-parallel-tracks worktrees and similar).
+          if printf '%s' "${HEAD_REF:-}" | grep -qiE "$AGENT_BRANCH_RE"; then
+            mark "head branch '$HEAD_REF' matches the agent branch pattern"
+          fi
+
+          # 5 — a track-report marker anywhere in the body. Catches a PARTIALLY stripped Auto
+          #     block: deleting the END marker to dodge the next job leaves the BEGIN marker
+          #     behind, and deleting both still leaves signals 1-4.
+          if printf '%s' "${PR_BODY:-}" | grep -qF 'track-report auto block'; then
+            mark "PR body carries a track-report marker"
+          fi
+
+          # --- meta-work exemption ---------------------------------------------------
+          # The repo that DEVELOPS this bundle cannot run the bundle's pipeline for its own
+          # maintenance: a skill/CI/docs change produces no run record, so track-report.sh
+          # has nothing to render and the Auto-block requirement can never be satisfied.
+          # Without an exemption every tooling PR here goes permanently red — and a check
+          # that is always red is one people learn to ignore, which is precisely the failure
+          # this bundle exists to prevent.
+          #
+          # Kept deliberately narrow: it applies only when EVERY changed file is tooling,
+          # it waives only the PRESENCE of the Auto block (a block that IS present is still
+          # validated), and it fails CLOSED — an unreadable file list exempts nothing.
+          meta_only=false; touches_gates=false; files_n=0
+          files="$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/files" \
+                     --jq '.[].filename' 2>/dev/null || true)"
+          if [ -n "$files" ]; then
+            files_n="$(printf '%s\n' "$files" | grep -c . || true)"
+            if [ -z "$(printf '%s\n' "$files" | grep -vE "$META_PATHS_RE" || true)" ]; then
+              meta_only=true
+            fi
+            printf '%s\n' "$files" | grep -qE "$GATE_PATHS_RE" && touches_gates=true
+          fi
+
+          {
+            printf 'is_agent=%s\n'      "$is_agent"
+            printf 'labeled=%s\n'       "$labeled"
+            printf 'why=%s\n'           "${why:-no agent signal}"
+            printf 'meta_only=%s\n'     "$meta_only"
+            printf 'touches_gates=%s\n' "$touches_gates"
+            printf 'files_n=%s\n'       "${files_n:-0}"
+          } >> "$GITHUB_OUTPUT"
+          echo "detection: is_agent=$is_agent (${why:-no agent signal})"
+          echo "scope: ${files_n:-0} file(s), meta_only=$meta_only, touches_gates=$touches_gates"
+
+  audit:
+    needs: detect
+    if: needs.detect.outputs.is_agent == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scope
+        env:
+          WHY: ${{ needs.detect.outputs.why }}
+          LABELED: ${{ needs.detect.outputs.labeled }}
+        run: |
+          echo "Auditing as an agent PR — signals: $WHY"
+          if [ "$LABELED" != "true" ]; then
+            echo "::warning::Detected as agent-authored but carrying no '$AGENT_LABEL' label — the skill's Step 8 labeling was skipped. The audit ran anyway (that is precisely why the other signals exist), but add the label so the scope is explicit rather than inferred."
+          fi
+
+      - name: PR body carries the machine-rendered Auto block
+        env:
+          # Passed through the environment, never interpolated into the script body —
+          # a PR description is attacker-controlled text, and `${{ }}` inside a run block
+          # is a shell-injection sink.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          META_ONLY: ${{ needs.detect.outputs.meta_only }}
+          TOUCHES_GATES: ${{ needs.detect.outputs.touches_gates }}
+          FILES_N: ${{ needs.detect.outputs.files_n }}
+        run: |
+          marker='<!-- END track-report auto block -->'
+
+          # Meta-work exemption. Waives ONLY the requirement that the block be present; a
+          # block that is present still goes through the consistency + no-blocking-failure
+          # checks in the next step. The waiver is written to the job summary and raised as
+          # a warning annotation, so it lands on the PR rather than staying buried in a log.
+          if [ "$META_ONLY" = "true" ] && ! printf '%s' "${PR_BODY:-}" | grep -qF "$marker"; then
+            {
+              echo "### ⚠️ Auto-block requirement WAIVED — meta-work exemption"
+              echo
+              echo "All ${FILES_N} changed file(s) are tooling (\`META_PATHS_RE\`), so this PR is"
+              echo "maintenance **on** the pipeline rather than work done **through** it. There is no"
+              echo "run record to render, and requiring one would leave every tooling PR permanently red."
+              echo
+              echo "**This means none of the discipline gates were enforced on this change.**"
+              if [ "$TOUCHES_GATES" = "true" ]; then
+                echo
+                echo "> 🔴 **This PR modifies the enforcement itself** (\`GATE_PATHS_RE\` matched)."
+                echo "> It is changing the gates while exempt from them. Read the diff to"
+                echo "> \`track-audit.sh\` / \`track-report.sh\` / \`agent-pr-audit.yml\` with that in mind:"
+                echo "> a weakened check and a fixed check look identical in a green build."
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::Auto-block requirement waived — all ${FILES_N} changed file(s) are tooling. No discipline gate was enforced on this PR; see the job summary."
+            exit 0
+          fi
+
+          if [ -z "${PR_BODY:-}" ]; then
+            echo "::error::This PR was detected as agent-authored but has an EMPTY body."
+            echo "Expected the track-report.sh Auto block (files changed, evidence," \
+                 "discipline audit, run stats). Run:"
+            echo "    bash .github/hooks/track-report.sh"
+            echo "and paste its output into the PR body per templates/pr-body.md."
+            exit 1
+          fi
+          if ! printf '%s' "$PR_BODY" | grep -qF "$marker"; then
+            echo "::error::No track-report Auto block in this agent-authored PR body."
+            echo "Without it there is no machine-verified half: no evidence table, no"
+            echo "discipline audit, no run stats — a reviewer would be taking the whole"
+            echo "pipeline on trust. Generate it with:"
+            echo "    bash .github/hooks/track-report.sh"
+            echo "If the run genuinely had no run record, that itself is the finding:"
+            echo "the bundle was not active, so none of the gates were enforced."
+            exit 1
+          fi
+          echo "✓ Auto block present."
+
+      - name: Discipline audit is present, self-consistent, and non-blocking
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -uo pipefail
+          body="${PR_BODY:-}"
+
+          # NOTE: GitHub runs this block as `bash -e`, and `set -uo pipefail` does NOT undo
+          # that. Every grep below can legitimately match nothing (a body with no audit
+          # section, a clean audit with no rows), and a bare non-zero grep would abort the
+          # step with a bare "exit code 1" instead of the verdict it exists to report. Hence
+          # `|| true` on each: "found nothing" is data here, not an error.
+          # The summary line track-report.sh renders, e.g.
+          #   - **14 passed · 2 warning(s) · 0 failure(s)**  ⚠️ review the warnings below
+          summary="$(printf '%s\n' "$body" \
+            | grep -oE '[0-9]+ passed · [0-9]+ warning\(s\) · [0-9]+ failure\(s\)' | head -1 || true)"
+
+          if [ -z "$summary" ]; then
+            echo "::warning::No discipline-audit summary in this agent PR body. Either the install predates track-audit.sh, or the section was removed after rendering. Every pipeline invariant here is UNVERIFIED — a reviewer must treat it as such."
+            exit 0
+          fi
+
+          warn_declared="$(printf '%s' "$summary" | sed -E 's/.* ([0-9]+) warning\(s\).*/\1/')"
+          fail_declared="$(printf '%s' "$summary" | sed -E 's/.* ([0-9]+) failure\(s\).*/\1/')"
+
+          # track-report.sh renders exactly one table row per non-PASS check, so the declared
+          # counts and the rendered rows must agree. They can disagree only if the block was
+          # hand-edited after rendering — the one remaining way a failing audit reaches a
+          # reviewer looking clean. Machine-rendered output that contradicts itself is not
+          # evidence, so a mismatch is a hard failure rather than a warning.
+          fail_rows="$(printf '%s\n' "$body" | grep -cE '^\| ❌ \|' || true)"
+          warn_rows="$(printf '%s\n' "$body" | grep -cE '^\| ⚠️ \|' || true)"
+          echo "declared: ${warn_declared} warn / ${fail_declared} fail" \
+               "— rendered rows: ${warn_rows} warn / ${fail_rows} fail"
+
+          if [ "${fail_declared:-0}" != "${fail_rows:-0}" ] \
+             || [ "${warn_declared:-0}" != "${warn_rows:-0}" ]; then
+            echo "::error::The discipline-audit block CONTRADICTS ITSELF: it declares" \
+                 "${warn_declared} warning(s)/${fail_declared} failure(s) but renders" \
+                 "${warn_rows}/${fail_rows} table row(s). track-report.sh always emits one" \
+                 "row per non-PASS check, so this block was hand-edited after rendering."
+            echo "Re-run 'bash .github/hooks/track-report.sh' and paste it unmodified."
+            exit 1
+          fi
+
+          if [ "${fail_declared:-0}" -gt 0 ] \
+             || printf '%s' "$body" | grep -qF 'blocking — this PR should not have been opened'; then
+            echo "::error::The embedded discipline audit reports ${fail_declared} BLOCKING failure(s)."
+            printf '%s\n' "$body" | grep -E '^\| ❌ \|' || true
+            echo "Resolve each ❌ (every finding carries its remediation in the table"
+            echo "above), re-run track-report.sh, and update the PR body."
+            exit 1
+          fi
+          echo "✓ Audit block is self-consistent and declares no blocking failure."

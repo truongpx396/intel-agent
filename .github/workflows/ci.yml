@@ -1,0 +1,186 @@
+# CI gate — lint, test, and security-scan every PR and every push to main.
+#
+# intel-agent is a SINGLE-RUNTIME repo (Python 3.12). The parent repo's Go,
+# frontend, terraform, and helm jobs have no counterpart here and are deliberately
+# absent — see .specify/memory/constitution.md, Technology & Quality Constraints.
+#
+# Jobs are PRESENCE- and CHANGE-guarded (dorny/paths-filter): a job only runs when
+# its inputs exist AND changed, so this pipeline is inert while the repo is still
+# specs-only and "lights up" as code lands.
+#
+# Gate ordering is fixed by the constitution (Development Workflow):
+#   lint/format → unit → integration → contract → conformance → Profile-B smoke
+#   → build → security scan
+#
+# NOTE: actions are pinned to major version tags for readability. Per
+# .github/instructions/devops-cicd.instructions.md they SHOULD be pinned to full
+# commit SHAs before production — Dependabot is configured to manage these pins.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # What changed? (path absent => filter is false => downstream skips)
+  # ---------------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      docker: ${{ steps.filter.outputs.docker }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            python:
+              - 'src/**/*.py'
+              - 'tests/**/*.py'
+              - 'evals/**/*.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            docker:
+              - '**/Dockerfile'
+              - '**/Dockerfile.*'
+              - 'deploy/**'
+            docs:
+              - '**/*.md'
+              - 'specs/**'
+
+  # ---------------------------------------------------------------------------
+  # Secret scanning — always runs (cheap, catches leaked creds in any change).
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: ${{ github.workspace }}/.gitleaks.toml
+
+  # ---------------------------------------------------------------------------
+  # Spec integrity — the repo is spec-first, so a broken cross-reference is a
+  # real defect. Also guards the extraction: contracts moved from aisat-intel
+  # carry relative links that must resolve in their NEW home.
+  # ---------------------------------------------------------------------------
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Relative-link check
+        run: ./scripts/check-links.sh
+
+  # ---------------------------------------------------------------------------
+  # Agent runtime  (Python 3.12)
+  # ---------------------------------------------------------------------------
+  python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install (frozen)
+        run: uv sync --frozen --all-extras --dev
+      - name: Lint (ruff)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Type-check (mypy, non-blocking until typed)
+        run: uv run mypy src || echo "::warning::mypy reported issues"
+      - name: Test (coverage)
+        run: uv run pytest --cov=src --cov-report=xml
+      - name: Dependency audit (pip-audit)
+        run: uvx pip-audit || echo "::warning::pip-audit reported advisories"
+
+  # ---------------------------------------------------------------------------
+  # Conformance — the port suites this repo EXPORTS to host repos. They run
+  # against our own reference implementations here; a host runs the same suite
+  # against its own. This is what makes cross-repo contract drift a build
+  # failure instead of a review catch (constitution VII).
+  # ---------------------------------------------------------------------------
+  conformance:
+    needs: [changes, python]
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install (frozen)
+        run: uv sync --frozen --all-extras --dev
+      - name: Port conformance suites
+        run: uv run pytest tests/conformance -v
+      - name: SC-001 access-correctness (profile-invariant)
+        run: uv run pytest tests/conformance/test_access_floor.py -v
+
+  # ---------------------------------------------------------------------------
+  # Profile-B smoke — the repo's reason to exist: a cited answer with NO Qdrant,
+  # NO NATS, and NO Go kernel bound. A failure here is a release blocker, not a
+  # regression to triage later (constitution, Standalone-runnable).
+  # ---------------------------------------------------------------------------
+  profile-b-smoke:
+    needs: [changes, python]
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stand up the single-container profile
+        run: make up
+      - name: Smoke (cited answer, no Qdrant / no NATS)
+        run: make smoke
+      - name: Assert no forbidden backend was bound
+        run: make smoke-assert-isolation
+      - name: Teardown
+        if: always()
+        run: make down
+
+  # ---------------------------------------------------------------------------
+  # Dockerfile lint + IaC/config scan  (any Docker or deploy change)
+  # ---------------------------------------------------------------------------
+  docker-lint:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hadolint all Dockerfiles
+        run: |
+          shopt -s globstar nullglob
+          files=(**/Dockerfile **/Dockerfile.*)
+          [ ${#files[@]} -eq 0 ] && { echo "no Dockerfiles"; exit 0; }
+          for f in "${files[@]}"; do
+            echo "== $f =="
+            docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < "$f"
+          done
