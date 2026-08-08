@@ -163,6 +163,46 @@ Four rules make these fragments trustworthy rather than decorative:
 
 **Sections stream as they complete.** `retrieve` finishing emits the `rag_retrieval` section on the stream channel; `generate` finishing emits `grounding` and `cost`. The `GET /query/{streamId}/debug` endpoint remains authoritative for reloads and returns the same sections. Nodes never publish to Redis directly — sections flow through the same transport-agnostic stream channel as tokens (see [Streaming](#streaming)), so the graph stays extractable.
 
+### Node telemetry — logs and metrics, which the debug panel is not (FR-021a, FR-024)
+
+The `debug` fragments answer *"what happened in this run?"* — for the member who asked, about the answer they got. They cannot answer *"is `rerank` slower than it was last week?"* or *"how often does `memory` degrade?"*, because **one run is not a distribution**, and a panel nobody has opened reports nothing. So every node emits two further signals, and the three are deliberately distinct jobs: the **panel** explains one answer to a member, the **trace** (Langfuse) shows an engineer the exact model interaction, and the **metrics** show an operator the shape of the whole population. A per-node `print` / `logger.info("agent called")` is the thing these three exist to make unnecessary, and it substitutes for none of them.
+
+Both signals are produced by **one instrumentation wrapper applied to every node**, never hand-rolled per node — otherwise coverage becomes a function of which node the author remembered, and the field set drifts until cross-node comparison is impossible.
+
+**1 — Three lifecycle records per node.** Emitted through the structlog binding (`src/observability.py`) as events with a fixed field set, never interpolated prose:
+
+| Event | Emitted | Adds |
+|---|---|---|
+| `node_started` | on entry, before any I/O | `attempt` |
+| `node_completed` | on return | `duration_ms`, `outcome ∈ {ok, degraded}`, `degrade_reason` when degraded |
+| `node_failed` | on a raised exception / exhausted retries | `duration_ms`, `error_class`, `attempt`, and whether the failure is terminal for the run |
+
+The correlation set carried by **every** record: `trace_id` (the id the BFF stamps into the NATS payload and into `ctx`, [nats-subjects.md](./nats-subjects.md)), `thread_id` (the checkpoint thread — `stream_id` interactive, `agent_run.id` durable), `graph_version` (the deployed build SHA, so a behavior change is attributable to a deploy rather than to folklore), `node`, `step`, `intent`, `model_alias`. That set is what turns "the API returned an error at 14:02" into a specific node of a specific run, and from there into its Langfuse trace and its individual model call.
+
+**Metadata only — never `state`, never a body.** No record may contain a prompt or response body, chunk text, a memory, or the member's query; `logger.info(state)` is specifically prohibited. This is not tidiness. The gateway client is the **single writer of prompt/response bodies, after PII scrub, under 30-day retention** ([llm-gateway.md](./llm-gateway.md), FR-024) — a node that dumps state creates a second copy that is unscrubbed, unexpiring, and, unlike the panel, subject to no clearance check at read time.
+
+**2 — A metric set, exported over OTel** to the collector the Go tier already reports to ([plan.md](../plan.md)). The Phase-1 instruments:
+
+| Instrument | Kind | Labels |
+|---|---|---|
+| `agent_node_duration_ms` | histogram | `node`, `outcome` |
+| `agent_node_total` | counter | `node`, `outcome` (`ok`\|`degraded`\|`failed`) |
+| `agent_degradation_total` | counter | `node`, `reason` (`rerank_fallback`, `memory_unavailable`, `rewrite_passthrough`, `vision_failed`, …) |
+| `agent_run_duration_ms` | histogram | `intent`, `outcome` |
+| `agent_run_total` | counter | `intent`, `outcome` (`ok`\|`blocked`\|`clarified`\|`failed`\|`paused`) |
+| `agent_run_steps` | histogram | `intent` |
+| `agent_tool_calls_total` | counter | `tool`, `outcome` |
+| `agent_gateway_calls_total` | counter | `alias`, `outcome` (`ok`\|`fallback`\|`error`) |
+| `agent_run_credits` | histogram | `intent` |
+| `agent_budget_exhausted_total` | counter | `boundary` — the [run-level budgets](#run-level-budgets--the-boundaries-above-the-per-node-timeouts-fr-028a) |
+| `agent_clarification_total` | counter | `intent` — the production counterpart of the SC-017 eval gate, so over-asking is visible in prod and not only in CI |
+
+**Labels are a closed, low-cardinality vocabulary** — node names, intents, aliases, tool names, outcomes. Never `tenant`, `principal`, `trace_id`, `stream_id`, a document id, or query text. Two reasons, and the second is the one that gets forgotten: unbounded labels melt a metrics backend, *and* a per-tenant series is an existence oracle for anyone who can read a dashboard — the same SC-001 failure the panel's count-only clearance reporting exists to prevent, re-introduced one layer up. Correlation down to a single run happens through `trace_id` in **logs and traces**, which are access-controlled and body-scrubbed; it never happens through a metric label.
+
+**Telemetry degrades cleanly.** No node depends on the exporter or the log sink: with neither bound, the graph runs green (the rule [agent-runtime.md](./agent-runtime.md) already states for tracing). Instrumentation that can fail a run is worse than no instrumentation.
+
+> **Scope boundary.** This contract fixes what the graph *emits*. Dashboards, alert rules, and published latency/throughput SLOs are the Phase-4 load-and-SLO item ([draft-plan.md §9](../../draft-plan.md)) — but they cannot be built retroactively over data nobody recorded, which is why emission is Phase 1.
+
 ### Clarification — asking instead of guessing (FR-045)
 
 **The branch originates in `route`, because `route` is the graph's single conditional-branch source.** When `route` judges the question materially ambiguous it writes `clarification` and routes to a terminal **`clarify`** node, which emits the `clarification` SSE event and ends the run. No `retrieve`, no `generate`, no partial answer.
@@ -276,6 +316,27 @@ Retry/timeout/degradation is declared per node (LangGraph `RetryPolicy` + an exp
 | `suggest` | 0 | 8s | Omit `suggestions` (the answer already streamed). |
 | `human_gate` | 0 | none (pauses indefinitely) | Durable form only. Not a failure mode — the run **parks** at a checkpoint (`status='paused'`) with zero spend until resolved; an unresolved gate is auto-expired to fail-closed (`approval.expire.tick`), which ends the run cleanly (`block_reason='approval_rejected'`), never proceeds. |
 
+### Run-level budgets — the boundaries above the per-node timeouts (FR-028a)
+
+The table above bounds each **step**; nothing in it bounds a **run**. Summing the column is not a deadline, it is an accident: the sum moves whenever one node's timeout is tuned, it ignores retries, and for the durable form it means nothing at all, since bounded re-entry can traverse the same nodes repeatedly. A run therefore carries explicit boundaries of its own, evaluated **at each node boundary — the same point the checkpoint is written**, so a breach lands on a clean, resumable edge rather than mid-node.
+
+| Boundary | Interactive | Durable (`long_horizon`) | Source | On breach |
+|---|---|---|---|---|
+| **Wall-clock deadline** | 120s | `run_deadline_s` (default 1800s) | `agent_policies` ([data-model.md](../data-model.md)) | `error='deadline_exceeded'` |
+| **Step cap** | n/a — single forward pass | `max_steps` (default 60) | `agent_policies` | `error='step_cap_exceeded'` |
+| **Correction depth** | disabled | `max_loop_depth` (default 20) | `agent_policies` | Phase-2 loops only; abstain per seam rule |
+| **Per-run credits** | n/a | `credits_cap` | `agent_run` | halt (existing FR-028 behavior) |
+| **Daily tokens** | `token_budget_day` | `token_budget_day` | `agent_policies` | admission refused before the run starts |
+
+Four properties make these boundaries honest rather than decorative:
+
+- **The deadline is a ceiling, not a sum.** 120s sits above the nominal interactive path (~109s of node timeouts) and below what retries could stretch it to, so a pathological run is cut off while a merely slow one still finishes. Tuning a node timeout does not silently move it.
+- **Paused time does not count.** A durable run parked at `human_gate` may wait days for a human; the deadline measures **working** time and the clock stops at `interrupt()` and restarts on resume. A deadline that expired while awaiting a human would convert the HITL gate into a random failure source — the opposite of what it exists for.
+- **The deadline propagates downward.** The remaining budget is passed as the per-call deadline to the gateway client and the `ToolRegistry`, so a hung provider or tool call cannot outlive the run that is waiting on it. A node timeout alone does not achieve this: it bounds the node, not the socket beneath it.
+- **A breach is settled, recorded, and terminal — never retried.** Spend already incurred is settled (a breach is not a refund event), `agent_budget_exhausted_total{boundary}` increments — the label's closed vocabulary is exactly `deadline` \| `steps` \| `credits_cap` \| `token_budget_day` — the reason is written to `debug` so the panel shows *why* the run stopped, and the run ends `failed`. If tokens have already streamed, the post-first-token rule from `generate` applies unchanged: settle the partial, do not re-run.
+
+Ordering is fixed: `guard` (fail-closed block) precedes budget evaluation, which precedes node execution. A blocked query never consumes budget, and an over-budget run never reaches a tool.
+
 ## Tool access (a `ToolRegistry` port: in-process impls, one MCP server, or a remote MCP client)
 
 The ten tools ([mcp-tools.md](./mcp-tools.md)) — eight read-only (Categories A–C) plus the two HITL-gated Category-D action tools (`web_search`, `edit_note`) — are reached through the **`ToolRegistry` port**, whose binding is selected by config (`tools.kind`) so the graph is **tool-source-agnostic**:
@@ -327,6 +388,10 @@ What does **not** travel with the graph and must be re-satisfied by the host's o
 - **Streaming decoupling**: `graph.astream_events` yields `token` events for a happy-path query with **no Redis client bound** (the adapter is absent in the test) — proving no node touches Redis.
 - **Fail-closed guard**: a moderation-provider timeout blocks the query (`error`), spends zero credits (SC-007), and never proceeds to `retrieve`.
 - **Reliability**: a `rerank` provider outage degrades to RRF order and still produces a cited answer; a `retrieve` outage fails the run; a `memory` outage produces an answer with `memories == []`.
+- **Deterministic model double**: the graph test suite binds a `FakeGateway` implementation of `LLMGatewayClient` returning **scripted** responses, and **no test in the suite reaches a provider** — an offline CI run is itself the assertion. The script must cover the responses that actually break nodes, not just the happy one: a well-formed answer, a tool-call response, **malformed/unparseable output**, a raised provider exception, a `429` with `Retry-After`, and a stream that emits tokens and then disconnects. Probabilistic behavior is the *model's* property and belongs in the eval set; **node behavior must be deterministic and is tested as such**.
+- **Failure-injection matrix**: every declared reliability policy is exercised by an injected fault, not merely written down — moderation timeout (fail-closed, zero spend), gateway `429`/timeout at each call site, `retrieve` backend unavailable, `rerank` unavailable, `memory` unavailable, a tool raising, a tool returning malformed data, empty retrieval (`source_count == 0` is **not** a failure), a `vision` call failing past its cutoff, and — durable form — **the checkpointer unavailable mid-run** (`failed('checkpoint_lost')`, never a silent restart). Each case asserts the *specified* outcome from the reliability table and that the degradation is recorded, never smoothed over.
+- **Run budgets**: an interactive run past its wall-clock deadline ends `failed('deadline_exceeded')` at a node boundary with spend settled and `agent_budget_exhausted_total{boundary="deadline"}` incremented; a durable run past `max_steps` ends `failed('step_cap_exceeded')`; **time spent paused at `human_gate` does not count against the deadline** (a gate held open past the deadline still resumes cleanly); the remaining budget is observable as the deadline passed to the gateway client and `ToolRegistry`.
+- **Telemetry**: exactly one `node_started` + one terminal record (`node_completed` or `node_failed`) per executed node, each carrying the full correlation set (`trace_id`, `thread_id`, `graph_version`, `node`, `step`) and a `duration_ms`; a degraded node reports `outcome="degraded"` with its `degrade_reason`. **Leak assertion**: a sentinel string planted in the query, in a retrieved chunk, and in a memory appears in **no** emitted log record or metric label (the FR-024 single-writer rule holds for logs too). **Label assertion**: every metric label value comes from the declared closed vocabulary — a test fails if any instrument is labeled with a tenant, principal, or id. **Degradation assertion**: with no exporter and no log sink bound, the graph still runs green.
 - **In-process tool parity**: a tool call through the in-process `ToolRegistry` writes exactly one `agent_audit_log` row with a `result_hash`, identical to the same tool called via `:8002` (FR-023, research §19).
 - **Human-gate interrupt/resume** (durable form): a `long_horizon` run reaching `human_gate` interrupts (checkpoints, `status='paused'`), spends **zero** credits while paused, and on `Command(resume=decision)` continues **exactly once** from the gate checkpoint (no settled node re-runs, no re-spend); a `reject` decision short-circuits with `block_reason='approval_rejected'` and never mutates the index; the `approval_decision` is the injected human value, never derived from tool output (FR-040, SC-014; the graph half of the `ApprovalContract`, [approval-ports.md](./approval-ports.md)).
 - **Agent action tools** (durable form, FR-041): `web_search_decide` performs **no** fetch until the per-search gate is approved (a reject writes no `web_results` and spends nothing for the fetch); `edit_note` commits the note update **only** after approval **and** an Authorizer `Permit(ActionUpdate)`+`WriteEnvelope` pass with `Clearance=min(agent,owner)` — an edit above clearance / outside workspace is denied (`not_found`), one that would raise `access_level` above the source floor is denied (`envelope_widens`), and a create attempt is refused (SC-015). Neither tool exists in the interactive compiled form.
