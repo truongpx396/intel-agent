@@ -1,0 +1,96 @@
+# Profile B — the self-contained agent runtime.
+#
+# Contract: specs/001-agent-runtime/contracts/agent-runtime.md § Profile B
+# Proof:    `make up && make smoke && make smoke-assert-isolation`
+#
+# WHAT IS DELIBERATELY ABSENT, and why it is absent rather than commented out:
+#   * no vector database  — retrieval binds the pgvector backend; ONE store is
+#                            both the corpus and the access floor (RLS).
+#   * no message broker   — bus.kind=inprocess; worker roles are direct calls.
+#   * no host kernel      — auth/billing/RLS-GUC plumbing are re-satisfied inside
+#                            the single container by the Profile-B entrypoint.
+#
+# scripts/assert-profile-b-isolation.sh FAILS if a qdrant/nats service appears
+# here. That is intentional: a commented-out service is one uncomment away from
+# quietly invalidating the standalone claim, so the absence is asserted, not
+# documented.
+
+name: intel-agent-profile-b
+
+services:
+  postgres:
+    # pgvector + RLS: the corpus AND the SC-A01 access floor, in one store.
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-intel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-intel}
+      POSTGRES_DB: ${POSTGRES_DB:-intel_agent}
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-pgvector.sql:/docker-entrypoint-initdb.d/00-pgvector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-intel} -d ${POSTGRES_DB:-intel_agent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # RLS is the ONLY access floor in this profile. A superuser connection
+    # bypasses RLS entirely, so the app MUST connect as a non-superuser role —
+    # enforced in migrations, asserted by AccessFloorContract.
+
+  redis:
+    # Checkpointer only. Not a bus here: bus.kind=inprocess.
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  gateway:
+    # Any OpenAI-wire endpoint. This container is the ONLY holder of provider
+    # keys — the runtime holds none and names aliases only.
+    image: ghcr.io/berriai/litellm:main-latest
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports: ["4000:4000"]
+    volumes:
+      - ./llm-gateway.config.yaml:/app/config.yaml:ro
+    env_file: [.env]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/health/liveliness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  agent:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      INTEL_AGENT_PROFILE: b
+      # The manifest's bindings, as env. Changing retrieval.kind to a vector
+      # store here is exactly the swap the isolation assertion is designed to catch.
+      RETRIEVAL_KIND: pgvector
+      BUS_KIND: inprocess
+      DATABASE_URL: postgresql://${POSTGRES_USER:-intel}:${POSTGRES_PASSWORD:-intel}@postgres:5432/${POSTGRES_DB:-intel_agent}
+      REDIS_URL: redis://redis:6379/0
+      LLM_GATEWAY_URL: http://gateway:4000
+      # Deliberately unset: QDRANT_*, NATS_*. Their presence fails the isolation gate.
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      gateway: {condition: service_healthy}
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  pgdata:
+  redisdata:
