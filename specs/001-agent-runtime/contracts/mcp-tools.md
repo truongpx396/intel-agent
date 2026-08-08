@@ -79,23 +79,23 @@ These ten tools are the **shared knowledge + action layer** — consumed by both
 ## Phase 2 (out of scope here)
 
 > Out of Phase 1 scope (see [spec.md](../spec.md) "Out of Scope"). Two additions are designed
-> in [draft-plan.md](../../draft-plan.md), neither of which changes the tools above:
+> in [draft-plan.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/draft-plan.md), neither of which changes the tools above:
 >
 > - **Category E — typed knowledge** (`get_artifact_by_type`, `search_biz_rules`,
 >   `get_agent_registry`, `resolve_dependency_chain`) — still read-only, still gated by
 >   `agent_policies.allowed_tools`, and still subject to the same clearance pre-filter as
->   Category A. (Category D is the Phase-1 HITL-gated action tier above.) See [Enterprise Knowledge Layer](../../draft-plan.md#phase-2--enterprise-knowledge-layer-typed-artifacts-knowledge-graph--agent-context-api).
+>   Category A. (Category D is the Phase-1 HITL-gated action tier above.) See [Enterprise Knowledge Layer](https://github.com/truongpx396/aisat-intel/blob/main/specs/draft-plan.md#phase-2--enterprise-knowledge-layer-typed-artifacts-knowledge-graph--agent-context-api).
 > - **Broader write-capable tools** (e.g. `ingest_document`/document creation, `write_memory`,
 >   artifact writes). Phase 1 ships **one** narrow, HITL-gated, access-bounded write tool —
 >   `edit_note` (Category D, `write_ops=['note_update']`, editing existing notes only). Every
 >   *other* write remains Phase 2 and stays behind the same explicit `agent_policies.can_write`
 >   capability with a wider `write_ops`/`write_artifact_types`. Any UI that lists the broader
 >   tools must mark them as future-phase so it never implies a capability this server will
->   refuse. See [Agent Access & Accountability](../../draft-plan.md#phase-2--agent-access--accountability).
+>   refuse. See [Agent Access & Accountability](https://github.com/truongpx396/aisat-intel/blob/main/specs/draft-plan.md#phase-2--agent-access--accountability).
 > - **Sandbox-backed code-gen / file-manipulation tools** (`run_script`, `transform_files`) —
 >   Category-D actions whose *implementation* runs agent-**generated** code inside an ephemeral,
 >   credential-free, network-isolated sandbox (`tmpl-coderun`) over the `Sandbox` port
->   ([sandbox-runtime.md](./sandbox-runtime.md)) — never in the agent process. Its boundary is
+>   ([sandbox-runtime.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/sandbox-runtime.md)) — never in the agent process. Its boundary is
 >   **gVisor + `max_runs=1`** on the ordinary per-job path; a microVM is stronger but **not
 >   required** (research §24). Governance follows the Category-D rules — off-by-default per
 >   role, `agent_policies.can_write` + `allowed_tools`, access-bounded
@@ -121,7 +121,7 @@ These ten tools are the **shared knowledge + action layer** — consumed by both
 >   a structured change summary computed from the two artifacts. Without this the HITL gate on
 >   binary documents degrades into a rubber stamp.
 > - **HITL granularity differs by what the run does** (FR-040's own three criteria, see
->   [sandbox-runtime.md](./sandbox-runtime.md) invariant 5): `transform_files` **writes**, so it is
+>   [sandbox-runtime.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/sandbox-runtime.md) invariant 5): `transform_files` **writes**, so it is
 >   gated **per run**. A **read-only** `run_script` (`files_out = []`, egress denied, read-only
 >   working set) mutates nothing, reaches nowhere, and reads only what the actor was already
 >   authorised to read — so it is approved **per analysis session**, letting the agent iterate
