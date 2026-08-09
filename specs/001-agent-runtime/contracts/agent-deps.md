@@ -15,22 +15,26 @@
 
 ## The fourteen ports
 
-| Port | Runtime needs it for | Degrades to | Supplied by |
+| Port | Runtime needs it for | Ships a default? | If absent |
 |---|---|---|---|
-| `RetrievalService` | fetching candidate context under the caller's visibility predicate | **nothing — required**; a `retrieve` outage fails the run | `DomainPlugin` |
-| `ToolRegistry` | dispatching the tool catalog | empty registry (agent answers without tools) | `DomainPlugin` |
-| `Policy` | the access model the `Authorizer` orchestrates | **nothing — required**; fail-closed | `DomainPlugin` |
-| `LLMGatewayClient` | every model call, no exceptions | **nothing — required** | generic runtime |
-| `MemoryService` | cross-session recall | no-op → `memories == []` | generic runtime |
-| `StreamWriter` | token/event emission | no-op → run completes unstreamed | generic runtime |
-| `Checkpointer` | durable-form resume | required for durable form only; interactive needs none | generic runtime |
-| `Bus` | worker-role fan-out | `inprocess` executor (direct calls) | generic runtime |
-| `Meter` | usage accounting | **default: a real local ledger** (tokens, cost, per principal, idempotent) | generic runtime (**default ships**) |
-| `Recorder` | append-only audit of tool calls | **nothing — required**; a tool call that cannot be audited must not run | host |
-| `ApprovalStore` | human-in-the-loop gate persistence | required iff any Category-D action tool is enabled | host |
-| `Ingestor` | getting content **into** the store so there is something to retrieve | absent → the store must be populated externally | generic runtime (**default ships**) |
-| `Channel` | reaching the runtime from a chat platform | absent → the host drives the graph directly | generic runtime (adapters) |
-| `IdentityBinder` | platform identity → `SecurityCtx` | **nothing — required iff a `Channel` is attached** | host |
+| `RetrievalService` | fetching context under the caller's visibility predicate | **yes** — pgvector / sqlite / qdrant | **required** — a `retrieve` outage fails the run |
+| `Policy` | the access model | **yes** — single-tenant allow-own | **required** — fail closed |
+| `LLMGatewayClient` | every model call | **yes** — any OpenAI-wire endpoint | **required** |
+| `Ingestor` | getting content **into** the store | **yes** — files / URLs / text | store must be populated externally |
+| `IdentityBinder` | who a caller is | **yes** — single-user / user list, fail-closed | **required** once any inbound surface is attached |
+| `Meter` | usage accounting | **yes** — real local ledger (tokens, cost, per principal) | **required** — never silently unmetered |
+| `Recorder` | append-only audit of tool calls | **yes** — local audit log | **required** — a tool call that cannot be audited must not run |
+| `ApprovalStore` | human-in-the-loop gates | **yes** — local store + resolve surface | required iff an action tool is enabled |
+| `ToolRegistry` | dispatching the tool catalog | **yes** — the built-in read-only tier | empty registry: the agent answers without tools |
+| `Checkpointer` | durable-form resume | **yes** — SQLite / Redis | interactive form needs none |
+| `Bus` | worker-role fan-out | **yes** — `inprocess` | n/a — `inprocess` *is* the no-broker case |
+| `StreamWriter` | token/event emission | **yes** — CLI + built-in UI writers | run completes **unstreamed**, recorded as degraded |
+| `MemoryService` | cross-session recall | **yes** — local memory store | `memories == []`, recorded as degraded |
+| `Channel` | reaching the agent from a chat platform | Phase 2 | the CLI/UI drive the graph directly |
+
+**Two different columns, deliberately.** *Ships a default* is what you get out of the box; *if absent* is what happens when a host explicitly binds nothing. A port can ship a real default **and** be required — that combination means "you will never accidentally run without this, and you do not have to build it either".
+
+**No port degrades to a silent success.** Where a column says *required*, the run fails loudly. Where it says *degraded*, the run records `outcome="degraded"` with a reason — it never produces a thinner answer that looks identical to a healthy one.
 
 **Every port has a working default.** The runtime is a product: it ingests, retrieves, meters, moderates, gates, and answers without a host. A host overrides a port when its own implementation is better for its context — not because ours is a placeholder.
 
