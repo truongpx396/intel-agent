@@ -40,7 +40,7 @@
 
 > **No hollow defaults.** A default that does nothing is worse than no default, because it makes a broken deployment look configured. Where a capability genuinely cannot work without host context, the runtime **fails to start without a binding** instead of shipping a no-op that silently passes. There is no port whose default is "pretend it worked".
 
-**"Degrades to" is a contract, not a convenience.** A port whose row says *nothing — required* must fail the run loudly when absent. A port that degrades must do so observably: the run records `outcome="degraded"` with a `degrade_reason`, never silently produces a thinner answer that looks identical to a healthy one.
+**"If absent" is a contract, not a convenience.** A row marked *required* must fail the run **loudly** when nothing is bound. A row marked *degraded* must degrade **observably** — the run records `outcome="degraded"` with a `degrade_reason`. Neither may quietly return a thinner answer that looks identical to a healthy one.
 
 ---
 
