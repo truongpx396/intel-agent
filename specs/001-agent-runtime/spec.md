@@ -175,6 +175,7 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 | AR-001 | FR-010 | runtime |
 | AR-002, AR-003 | FR-011 | runtime |
 | AR-004 | FR-012 | runtime |
+| AR-004 (action tools) | FR-041 | **shared** — the runtime owns the gating, dispatch, and the `web_search_decide` / `edit_note` node behavior; the **tool bodies** are the host's `DomainPlugin` (a web-search tool wraps the host's fetch/distill path; a note-edit tool mutates host-owned content under a host `WriteEnvelope`) |
 | AR-005, AR-006 | FR-040 | **shared** — runtime pauses; host persists and resolves |
 | AR-007 | FR-040 | runtime |
 | AR-008 | FR-007 (data-layer floor) | **shared** — runtime lowers; host sets store context |
