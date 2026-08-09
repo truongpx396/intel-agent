@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "description": "Version lock for the sso-single-branch-development skill's external dependencies. Seeded (never clobbered) by install-hooks.sh into .github/hooks/skill-deps.json and COMMITTED so the pinned versions travel to every checkout/worktree. track-preflight.sh verifies these once per run (results TTL-cached under runs/ — see TRACK_DEPS_CACHE_TTL_HOURS) so a heavy version probe does not re-run every time.",
+  "notes": [
+    "range grammar (space-separated = AND): '>=X.Y', '>X.Y', '<=X.Y', '<X.Y', '=X.Y', or a bare 'X.Y' (treated as '>=X.Y'). Tilde/caret are NOT supported — spell the bounds out, e.g. '>=2.1 <3'.",
+    "probe = the command whose output carries the version; the first N.N(.N) token in its stdout/stderr is parsed. If the probe's binary is absent from PATH the dep is 'missing'.",
+    "required:true  → a missing dep hard-fails preflight; an out-of-range version hard-fails only when TRACK_DEPS_STRICT=1 (otherwise it warns).",
+    "required:false → missing or out-of-range only ever warns; use for repo toolchain that not every run needs.",
+    "an empty range ('') skips the version check but still records presence (pure caching, no lock)."
+  ],
+  "dependencies": {
+    "git": { "range": ">=2.30", "probe": "git --version", "required": true },
+    "jq": { "range": ">=1.6", "probe": "jq --version", "required": true },
+    "superpowers": { "range": "=6.2.0", "probe": "superpowers --version", "required": false },
+    "speckit": { "range": "=0.16.0", "probe": "specify --version", "required": false }
+  }
+}

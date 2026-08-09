@@ -1,0 +1,58 @@
+name: 'Telegram notify'
+description: 'Send a message to a Telegram chat via the Bot API. Best-effort — never fails the calling job.'
+
+inputs:
+  bot-token:
+    description: 'Telegram bot token (from @BotFather). Store as a secret.'
+    required: true
+  chat-id:
+    description: 'Target chat id (user, group, or channel). Store as a secret.'
+    required: true
+  message:
+    description: 'Message text. Sent url-encoded, so arbitrary content is safe.'
+    required: true
+  parse-mode:
+    description: 'Empty (plain text, safest), "HTML", or "MarkdownV2".'
+    required: false
+    default: ''
+  disable-web-page-preview:
+    description: 'Suppress link previews.'
+    required: false
+    default: 'true'
+  message-thread-id:
+    description: 'Optional forum topic / thread id.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TG_TOKEN: ${{ inputs.bot-token }}
+        TG_CHAT: ${{ inputs.chat-id }}
+        TG_TEXT: ${{ inputs.message }}
+        TG_PARSE: ${{ inputs.parse-mode }}
+        TG_PREVIEW: ${{ inputs.disable-web-page-preview }}
+        TG_THREAD: ${{ inputs.message-thread-id }}
+      run: |
+        set -uo pipefail
+        if [ -z "${TG_TOKEN}" ] || [ -z "${TG_CHAT}" ]; then
+          echo "::warning::Telegram bot-token/chat-id not configured — skipping notification."
+          exit 0
+        fi
+        args=(--silent --show-error --max-time 20
+          --data-urlencode "chat_id=${TG_CHAT}"
+          --data-urlencode "text=${TG_TEXT}"
+          --data-urlencode "disable_web_page_preview=${TG_PREVIEW}")
+        [ -n "${TG_PARSE}" ]  && args+=(--data-urlencode "parse_mode=${TG_PARSE}")
+        [ -n "${TG_THREAD}" ] && args+=(--data-urlencode "message_thread_id=${TG_THREAD}")
+        code=$(curl "${args[@]}" -o /tmp/tg_resp.json -w '%{http_code}' \
+          "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" || echo 000)
+        if [ "$code" = "200" ]; then
+          echo "Telegram notification sent."
+        else
+          echo "::warning::Telegram API returned HTTP ${code} (notification not delivered)."
+          cat /tmp/tg_resp.json 2>/dev/null || true
+        fi
+        exit 0 # notifications are best-effort and must never mask the deploy result

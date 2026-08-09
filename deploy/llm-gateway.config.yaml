@@ -1,0 +1,9 @@
+# Alias map. The runtime names ONLY these aliases, never a concrete model id,
+# so swapping a provider is a change to this file and invisible to the runtime.
+model_list:
+  - model_name: fast
+    litellm_params: {model: anthropic/claude-haiku-4-5-20251001, api_key: os.environ/ANTHROPIC_API_KEY}
+  - model_name: smart
+    litellm_params: {model: anthropic/claude-sonnet-5, api_key: os.environ/ANTHROPIC_API_KEY}
+  - model_name: embed
+    litellm_params: {model: openai/text-embedding-3-small, api_key: os.environ/OPENAI_API_KEY}

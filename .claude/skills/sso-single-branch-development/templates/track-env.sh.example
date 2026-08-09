@@ -1,0 +1,107 @@
+# track-env — hook preset for the sso-single-branch-development bundle.
+#
+# TWO LAYERS (both optional, both live in .github/hooks/ next to the scripts):
+#   * track-env.base.sh  — COMMITTED, repo-wide defaults shared across every
+#     track/worktree. Copy THIS file to .github/hooks/track-env.base.sh, fill in
+#     the values common to your repo, and commit it. Because it is committed it
+#     travels into every worktree automatically (single-branch AND parallel
+#     tracks) — nothing is copied at run start.
+#   * track-env.sh       — GITIGNORED, per-worktree LOCAL override. Optional.
+#     Copy this file to .github/hooks/track-env.sh in a worktree only when that
+#     branch must deviate from the repo base (e.g. a narrower writable scope).
+#
+# WHY EITHER EXISTS
+#   The track-*.sh hooks read all their config from the environment, and each
+#   no-ops until its var is set. Hand-exporting a dozen TRACK_* vars every run is
+#   the #1 footgun: a resume that forgets them runs SILENTLY UNGATED (guard off,
+#   evidence gate trivially passes). Binding the config to a file the hooks
+#   auto-source removes that footgun.
+#
+# PRECEDENCE (most specific wins; every line uses `${VAR:-default}`)
+#   exported env  >  track-env.sh (worktree)  >  track-env.base.sh (repo)  >  script default
+#   Each hook sources local first, then base, so a worktree value wins over the
+#   repo base, and an already-exported value (e.g. an sso-executing-parallel-tracks
+#   per-track override) wins over both — no file edit needed. To make a value
+#   authoritative, drop the `${VAR:-...}` wrapper and assign it directly.
+#
+# NOTE: RUN_ID is intentionally NOT preset here — it is MINTED per run by
+# track-preflight.sh and recovered from the runs/*.dispatch breadcrumb on resume.
+# Hand-setting it breaks resume. Leave it to the preflight step.
+#
+# `track-preflight.sh --persist` appends a MANAGED RUN_ID block to track-env.sh (not to
+# this base file). That block is self-retiring: it adopts its id only while the run is
+# LIVE (no terminal status, not completed) and this checkout is on the run's own branch.
+# Do not replace it with a bare `export RUN_ID=…` — an unconditional one outlives the run
+# it names and then governs every later session in the checkout, which is how a tripped
+# tool-call ceiling ends up halting an unrelated task's every tool call.
+#
+# TWO CATEGORIES OF VAR (tagged inline below — the tag is documentation, NOT part
+# of the name; the hooks read the plain TRACK_*/PREFLIGHT_* names):
+#   [TASK-DERIVED]  preflight PROPOSES this per run from the task's file/language
+#                   surface; you confirm it at Step 1. Ships EMPTY here on purpose
+#                   so an unedited copy fails LOUD (guard denies all edits / gate
+#                   drops to rules-only) instead of silently inheriting some other
+#                   repo's stack. Set per-run (export) or seed a repo-typical value.
+#   [REPO-POLICY]   a repo-wide constant/policy you set ONCE in track-env.base.sh
+#                   and do NOT regenerate per run. Safe, structural defaults kept.
+# Stack-specific example values (Go/Py/TS) live in comments, never as live defaults.
+
+# --- guard: this branch's writable scope + frozen entrypoints ----------------
+export TRACK_ALLOWED_PREFIXES="${TRACK_ALLOWED_PREFIXES:-}"           # [TASK-DERIVED] colon-separated path prefixes this branch may edit. EMPTY ⇒ guard fails closed (denies ALL edits). e.g. "backend-go/:frontend/" or "src:test"
+export TRACK_FROZEN_PATHS="${TRACK_FROZEN_PATHS:-}"                   # [TASK-DERIVED] colon-separated exact files no branch may edit (leave empty on bootstrap). e.g. "backend-go/cmd/api/main.go"
+export TRACK_IMMUTABLE_PREFIXES="${TRACK_IMMUTABLE_PREFIXES:-}"       # [REPO-POLICY] committed files here are append-only. e.g. "migrations/"
+export TRACK_GUARD_DESTRUCTIVE="${TRACK_GUARD_DESTRUCTIVE:-1}"        # [REPO-POLICY] deny DROP/TRUNCATE/FLUSHALL/rm -rf etc. (unset to waive)
+export TRACK_ALLOW_FF_PUSH="${TRACK_ALLOW_FF_PUSH:-}"                 # [REPO-POLICY] set to 1 ONLY for a PR-rework flow; default lockout stops the worker at the draft PR
+
+# --- run state ---------------------------------------------------------------
+export RUNS_DIR="${RUNS_DIR:-runs}"                                   # [REPO-POLICY] run record + breadcrumb dir — MUST be gitignored (see hooks.md)
+
+# --- preflight ---------------------------------------------------------------
+export PREFLIGHT_REQUIRE_GH="${PREFLIGHT_REQUIRE_GH:-1}"              # [REPO-POLICY] require authenticated gh (0 to waive on early setup runs)
+export PREFLIGHT_REQUIRE_TOOLCHAIN="${PREFLIGHT_REQUIRE_TOOLCHAIN:-}" # [TASK-DERIVED] comma-separated bins the task's languages need on PATH. e.g. "go,uv,node"
+
+# --- dependency version-lock (skill-deps.json) + probe cache -----------------
+# skill-deps.json (beside the hooks) pins tool versions so a client checkout uses versions
+# aligned with the skill (superpowers/speckit/git/jq/…). track-deps.sh probes each tool at
+# preflight and CACHES the result (runs/.deps-cache.json) so heavy `--version` calls are not
+# repeated every run. Cache invalidates on PATH change, manifest change, or TTL expiry.
+export TRACK_DEPS_CACHE_TTL_HOURS="${TRACK_DEPS_CACHE_TTL_HOURS:-72}" # [REPO-POLICY] hours to trust a cached probe (0 = always re-check)
+export TRACK_DEPS_STRICT="${TRACK_DEPS_STRICT:-0}"                  # [REPO-POLICY] 1 = an out-of-range pinned version hard-fails preflight; 0 = warn only
+export TRACK_DEPS_MANIFEST="${TRACK_DEPS_MANIFEST:-}"              # [REPO-POLICY] path to skill-deps.json; empty = auto (beside the hooks). Absent file = no-op
+
+# --- evidence gate -----------------------------------------------------------
+# [REPO-POLICY] TRACK_EVIDENCE_KINDS / TRACK_EVIDENCE_RULES are the repo's how-to-test
+# CATALOG — set once, do NOT regenerate per run. Use EITHER TRACK_TEST_CMD_PATTERN
+# (simple: one "test" kind) OR the KINDS/RULES pair (multi-kind), not both. Labels in
+# KINDS MUST match the kinds named in RULES / REQUIRED_EVIDENCE — preflight warns on
+# any mismatch. Ship EMPTY so the gate is a no-op until the repo declares its stack.
+#   e.g. TRACK_EVIDENCE_KINDS="go-test:go test -race;py:uv run pytest;ts:tsc --noEmit"
+#   e.g. TRACK_EVIDENCE_RULES="*.go:go-test;*.py:py;*.tsx:ts;*.ts:ts;migrations/*:pg-explain"
+export TRACK_EVIDENCE_KINDS="${TRACK_EVIDENCE_KINDS:-}"              # [REPO-POLICY] label:pattern pack (see examples above)
+export TRACK_EVIDENCE_RULES="${TRACK_EVIDENCE_RULES:-}"              # [REPO-POLICY] diff-path glob → required kind (see examples above)
+export TRACK_REQUIRED_EVIDENCE="${TRACK_REQUIRED_EVIDENCE:-}"        # [TASK-DERIVED] kinds required on EVERY diff (floor); empty = rules-only. e.g. "go-test,py"
+# [REPO-POLICY] Non-code paths that cannot change any test result. When EVERY path the diff
+# touches matches one of these, the gate no-ops — INCLUDING the floor above, which a
+# prose-only diff can never legitimately satisfy (its only ways out would be to re-run an
+# unrelated suite or waive the gate wholesale). ALL-or-nothing: one code file anywhere in
+# the diff restores the full requirement set, so this cannot smuggle code past the floor.
+# Ships EMPTY (off) — declare your own prose paths; a repo that keeps runnable examples
+# under docs/ should NOT blanket-skip docs/.
+#   e.g. TRACK_EVIDENCE_SKIP_GLOBS="*.md;docs/*;specs/*;LICENSE;.github/ISSUE_TEMPLATE/*"
+export TRACK_EVIDENCE_SKIP_GLOBS="${TRACK_EVIDENCE_SKIP_GLOBS:-}"    # ';'-separated globs; `*` spans `/`
+export TRACK_BASE_REF="${TRACK_BASE_REF:-origin/main}"               # [REPO-POLICY] STRONGLY RECOMMENDED — the gate needs a real base or a committed diff looks empty and passes silently
+
+# --- ceilings / hardening ----------------------------------------------------
+export TRACK_MAX_TOOL_CALLS="${TRACK_MAX_TOOL_CALLS:-200}"           # [REPO-POLICY] tool-call hard stop
+export TRACK_MAX_TOKEN_ESTIMATE="${TRACK_MAX_TOKEN_ESTIMATE:-800000}" # [REPO-POLICY] Stop: token ceiling; blocks the stop + writes status:budget-exceeded on trip. 0 disables. Counts input+cache_write+output from the transcript's own message.usage (cache_read excluded); falls back to a chars÷4 heuristic on surfaces without usage data. RE-TUNE on a known-good run — a value inherited from the old chars÷4-only estimate trips far too early.
+export TRACK_SENTINEL="${TRACK_SENTINEL:-1}"                         # [REPO-POLICY] Stop: scan staged diff for secrets/leftovers (unset to disable)
+# [REPO-POLICY] Self-heal cap: how many times the controller may retry ONE distinct
+# failure before halting the run `blocked` (via `track-note.sh status blocked …`) instead
+# of thrashing. PROMPT-ENFORCED — no hook can count review rounds, so this var exists to
+# give the number a durable, auditable home rather than living only in the model's head
+# where a context compaction erases it. Distinct from the orchestrator's no-progress
+# detector, which counts STALLED PASSES; this counts FIX ATTEMPTS.
+export TRACK_SELF_HEAL_ATTEMPTS="${TRACK_SELF_HEAL_ATTEMPTS:-2}"
+
+# --- notify (optional) -------------------------------------------------------
+export TRACK_NOTIFY_WEBHOOK="${TRACK_NOTIFY_WEBHOOK:-}"              # [REPO-POLICY] Slack/Discord/generic webhook for terminal state; empty = no notify
