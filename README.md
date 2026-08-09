@@ -51,6 +51,43 @@ AgentManifest (config)  ──selects──►  DomainPlugin (code: Tools + Poli
 - **The graph is manifest-blind.** No node reads the manifest. Adding a domain changes deps and
   config, never a node.
 
+## The graph
+
+One `StateGraph`, compiled two ways — an ephemeral interactive pass and a checkpointed durable one — never two graphs. Phase-1 edge order for an interactive (`semantic`) run:
+
+```
+START → guard → route → rewrite → retrieve → rerank → assemble → memory → generate → suggest → END
+```
+
+| Node | Does |
+|---|---|
+| `guard` | Moderation + injection screen + per-role tool allowlist. Fail-closed — blocks before any retrieval or spend. |
+| `route` | Classifies intent (`semantic` / `structured` / `long_horizon`) and a model-tier alias. Runs once per run; immutable after. |
+| `rewrite` | History-aware query rewrite/expansion. |
+| `retrieve` | Vector/hybrid search on `semantic`; a fixed parameterized tool on `structured` — never free-form Text-to-SQL. |
+| `rerank` | Cross-encoder rerank over the merged candidate set. |
+| `assemble` | Parent-chunk expansion, dedupe, token-budget trim. |
+| `memory` | Per-user memory injection, clearance-filtered at read time. Never fails the run. |
+| `generate` | Grounded generation with inline citations; streams tokens. |
+| `suggest` | 2–3 follow-up suggestions. Never fails the run. |
+
+The durable form adds a tenth node, `human_gate` — the canonical LangGraph `interrupt()` / `Command(resume=…)` pattern, pausing a run before an index-mutating or outward-reaching step and settling **zero spend** while paused. Every node is a pure `(state, config)` function with its own retry/timeout/degrade policy, so a reranker outage degrades to RRF order and a memory outage degrades to no injected memory — neither fails the run.
+
+Full node-by-node contract, the `AgentState` schema, reliability table, run-level budgets, and the Phase-2 seams (CRAG-style corrective retrieval, Self-RAG faithfulness, complexity-based model routing): [contracts/agent-graph.md](specs/001-agent-runtime/contracts/agent-graph.md).
+
+## Tools
+
+Ten scoped tools across four categories — one set of implementations, exposed two ways: in-process to the built-in graph, and over MCP (`:8002`) to external/local agents, through the **same** policy wrapper (allowlist check, tenant/principal scoping, audit log):
+
+| Category | Tools | Notes |
+|---|---|---|
+| A — Knowledge (Tier 1) | `search_personal_knowledge`, `search_workspace_knowledge`, `get_document_by_id`, `list_documents` | Read-only, clearance/ownership pre-filtered *before* scoring |
+| B — Structured (Tier 2) | `query_employees`, `query_projects`, `query_metrics` | Typed arguments only — hand-written scoped queries, never generated SQL |
+| C — Utility | `get_current_datetime`, the shared `web_distill` fetch | `web_distill` is SSRF-guarded: `https`-only, DNS-rebinding-safe, no redirects |
+| D — Agent actions | `web_search`, `edit_note` | HITL-gated (per-call approval before it runs/commits), access-bounded (`min(agent, owner)` clearance), durable-form only |
+
+A tool not in the caller's `allowed_tools` is rejected before execution — the defense against a compromised or injected run escalating its own privileges. Full catalog, arguments, and enforcement rules: [contracts/mcp-tools.md](specs/001-agent-runtime/contracts/mcp-tools.md).
+
 ## Two deployment profiles, one binary
 
 |  | **Profile A** — reference host | **Profile B** — self-contained |
