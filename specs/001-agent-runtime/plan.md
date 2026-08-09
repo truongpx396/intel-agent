@@ -67,6 +67,7 @@ specs/001-agent-runtime/
 │   ├── README.md
 │   ├── agent-deps.md        # ← the boundary: thirteen ports
 │   ├── host-integration.md  # ← the boundary: five host obligations
+│   ├── stream-events.md     # event vocabulary + test doubles (unblocks both repos)
 │   ├── channels.md          # Discord / Slack / WeChat (port now, adapters Phase 2)
 │   ├── agent-graph.md       # moved, history preserved
 │   ├── agent-runtime.md     # moved, history preserved
@@ -95,6 +96,8 @@ src/intel_agent/
 ├── channels/         # Phase 2: runner.py + discord.py | slack.py | wechat.py
 │                     #   sits ABOVE the graph, never in AgentDeps — that is what
 │                     #   keeps the graph channel-blind (contracts/channels.md)
+├── events.py         # the emitted event vocabulary + SCHEMA_VERSION
+├── testing/          # PUBLIC API — FakeAgentRuntime + golden/ fixtures for HOSTS
 └── conformance/      # PUBLIC API — imported by host repos
 
 prompts/  evals/  migrations/  tests/{unit,integration,conformance,smoke}/

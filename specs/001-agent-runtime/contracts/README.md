@@ -17,6 +17,7 @@ Every boundary this runtime has, declared before implementation (constitution, P
 | [agent-runtime.md](./agent-runtime.md) | `AgentManifest` + `DomainPlugin` composition, the backing-service swap matrix, Profiles A and B |
 | [mcp-tools.md](./mcp-tools.md) | The tool catalog, allowlist dispatch, and the two HITL-gated action tools |
 | [approval-ports.md](./approval-ports.md) | `HumanGate` / `ApprovalStore` — the human-in-the-loop gate |
+| [stream-events.md](./stream-events.md) | The event vocabulary the runtime emits, plus the `FakeAgentRuntime` and golden fixtures that let each repo be developed and tested **without the other** |
 | [channels.md](./channels.md) | Chat platforms (Discord, Slack, WeChat) — the `Channel` capability model and the `IdentityBinder` split. Port fixed now, adapters Phase 2 |
 
 ## Conventions

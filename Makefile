@@ -76,6 +76,19 @@ smoke: ## Prove a cited answer end-to-end on the standalone profile
 smoke-assert-isolation: ## Fail if a forbidden backend (Qdrant/NATS) got bound
 	@./scripts/assert-profile-b-isolation.sh
 
+# ------------------------------- dev harness -------------------------------
+# This repo has no product UI (that stayed with the host), so these two exist to
+# make a run observable while developing. BOTH are dev-only and never packaged.
+# The page is a REFERENCE CONSUMER of the published event vocabulary, not a
+# product: if it ever needs a special case, the vocabulary is missing something.
+.PHONY: dev
+dev: ## Streaming CLI REPL — the default development loop
+	@if [ -d src ]; then uv run python -m intel_agent.dev.repl; else echo "skip dev (no src/ yet)"; fi
+
+.PHONY: dev-ui
+dev-ui: ## Minimal self-contained SSE page (dev only; renders only published events)
+	@if [ -d src ]; then uv run python -m intel_agent.dev.ui; else echo "skip dev-ui (no src/ yet)"; fi
+
 # ------------------------------- profile C ---------------------------------
 # One container, one file: SQLite + no-op meter, no Postgres, no Redis, no bus.
 # WEAKER FLOOR: SQLite has no row-level security, so the visibility predicate is

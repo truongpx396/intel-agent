@@ -118,6 +118,17 @@
 - [ ] **T060** Retrieval-quality eval — recall and MRR thresholds, run against **both** retrieval backends so a backend swap cannot quietly regress quality.
 - [ ] **T061** Implement the **incident→regression loop**: a `evals/regressions/` directory where every observed agent-behavior defect is added as a permanent case, reproduced from its recorded trace, **before** its fix counts as complete.
 
+## Stage 10a: Test doubles and dev harness (unblocks BOTH repos)
+
+> Do this **early — right after Stage 4**, not late. Until `FakeAgentRuntime` exists, a host cannot build its transport, debug panel, chat UI, or billing path against anything real; and until a dev harness exists, nobody here can *watch* a run stream. These six tasks are what make the two repos independently developable, so their value is highest before either side has improvised a substitute it will have to unwind.
+
+- [ ] **T062a** Define the event vocabulary in `src/intel_agent/events.py` per [contracts/stream-events.md](./contracts/stream-events.md), with a `SCHEMA_VERSION`.
+- [ ] **T062b** `intel_agent.testing.FakeAgentRuntime` — scripted, deterministic, same call surface as `build_graph(...)`. Scenarios: `CITED_ANSWER`, `REFUSAL`, `CLARIFICATION`, `GATE_PAUSE_RESUME`, `DEGRADED_RERANK`, `DEADLINE_DEFERRAL`, `ERROR`. **Exported**, so a host never hand-rolls a second definition of the vocabulary.
+- [ ] **T062c** `intel_agent.testing.golden/` — JSONL fixture per scenario. Assert the **real** graph (against `FakeGateway`) reproduces each, modulo nondeterministic ids. This is the check that keeps the double honest.
+- [ ] **T062d** `StreamEventContract` — the seven ordering guarantees, out-of-order/interleaved arrival, forward compatibility with an unknown future event, **pause is not completion**, and no body in any payload.
+- [ ] **T062e** `make dev` — a streaming CLI REPL. The default development loop: fast, scriptable, diffable, CI-friendly.
+- [ ] **T062f** `make dev-ui` — one self-contained HTML page over SSE, **dev-only, never packaged**. Renders **only** from the published vocabulary and calls no bespoke endpoint; run against every golden fixture in CI. If it ever needs a special case, the vocabulary is missing something — fix the vocabulary, not the page.
+
 ## Stage 11: Chat channels (Phase 2 — port fixed now, adapters later)
 
 > The `Channel` port, its capability model, and the `IdentityBinder` split are settled in [contracts/channels.md](./contracts/channels.md), so these are **additive**: no node changes, no boundary change.

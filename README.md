@@ -81,6 +81,29 @@ src/intel_agent/              # graph/ tools/ retrieval/ memory/ ports/ channels
 prompts/  evals/  migrations/  tests/  deploy/
 ```
 
+## Developing each side without the other
+
+The split created a testing hole in both directions, and one mechanism closes both: a **versioned event vocabulary** plus **doubles the runtime ships** ([contracts/stream-events.md](specs/001-agent-runtime/contracts/stream-events.md)).
+
+**A host has a UI and a transport but no agent** — so it imports one:
+
+```python
+from intel_agent.testing import FakeAgentRuntime, scenarios
+
+graph = FakeAgentRuntime(scenarios.GATE_PAUSE_RESUME)   # no model, no store, no network
+```
+
+Scenarios cover a cited answer, refusal, clarification, a human gate pausing and resuming, a degraded rerank, a deadline deferral, and an error. The double ships **here**, not in the host, so it cannot become a second unversioned definition of the vocabulary — and golden JSONL fixtures let both repos assert against the *same files*.
+
+**This repo has an agent but no UI** — so it has two dev harnesses, both dev-only and never packaged:
+
+| | For |
+|---|---|
+| `make dev` | streaming CLI REPL — the default loop: fast, scriptable, CI-friendly |
+| `make dev-ui` | one self-contained SSE page — token streaming, the debug panel, a real approve/reject gate |
+
+The page is a **reference consumer, not a product**: it renders only from the published vocabulary and calls no bespoke endpoint. If it ever needs a special case, the vocabulary is missing something — fix the vocabulary, not the page. It must never grow auth, persistence, or styling ambitions; a dev harness that becomes a second product surface re-creates the coupling this extraction removed.
+
 ## Chat platforms
 
 Discord, Slack, and WeChat reach the runtime through the `Channel` port. The split:
