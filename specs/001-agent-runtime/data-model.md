@@ -14,7 +14,7 @@ Two tables this repo **owns** and ships migrations for; three it reaches only th
 | `agent_run` | **intel-agent** | Checkpoint pointer + run budget accounting; meaningless outside the runtime. |
 | `approval_request` | host | Also backs non-agent gates (e.g. ingestion accept/confirm). Reached via `ApprovalStore`. |
 | `agent_audit_log` | host | The host owns the tamper-evident chain head. Reached via `Recorder`. |
-| credit ledger | host | The host MUST be its single writer (SC-006 upstream). Reached via `Meter`. |
+| credit ledger | host | The host MUST be its single writer (the host's ledger-exactness criterion). Reached via `Meter`. |
 
 > A **reference** implementation of `approval_request` and `agent_audit_log` ships here so the standalone profile runs alone. It is explicitly *not* the source of truth in an embedded deployment — a host binds its own.
 

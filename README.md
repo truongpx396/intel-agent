@@ -134,7 +134,7 @@ run; it never implements *how* a host bills or authenticates.
 | | intel-agent | aisat-intel |
 |---|---|---|
 | Owns | the **port** | the **implementation** and the deployment |
-| Examples | `RetrievalService`, `ToolRegistry`, `Policy` protocol, `Meter` | Qdrant hybrid search, AISAT tool bodies, `SingleAxisPolicy`, the sole `credit_ledger` writer |
+| Examples | `RetrievalService`, `ToolRegistry`, `Policy` protocol, `Meter` | Qdrant hybrid search, its own tool bodies, its clearance `Policy`, the sole credit-ledger writer |
 
 That single rule resolves every ownership question at the seam. Engineering principles I–VI, IX,
 and X in [the constitution](.specify/memory/constitution.md) are shared **verbatim** with

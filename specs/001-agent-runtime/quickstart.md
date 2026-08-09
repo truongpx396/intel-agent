@@ -1,6 +1,6 @@
 <!-- Extracted from aisat-intel@369756e (specs/001-contextengine-mvp/quickstart.md),
      rewritten for the standalone profile — the source quickstart stands up a
-     full product (Go BFF, SPA, Casdoor, Qdrant, NATS), none of which exists here. -->
+     full product (Go BFF, SPA, the host's auth provider, Qdrant, NATS), none of which exists here. -->
 
 # Quickstart
 

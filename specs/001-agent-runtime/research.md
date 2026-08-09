@@ -1,13 +1,13 @@
 <!-- Extracted from aisat-intel@369756e (specs/001-contextengine-mvp/research.md).
      Carries the agent-relevant decisions (source §§5, 6, 7, 12, 13, 17, 19, 20,
-     21, 22, 25), restated against the PORT boundary rather than against AISAT's
-     concrete backing services. Host-specific sections (ingestion, credits,
+     21, 22, 25), restated against the PORT boundary rather than against the reference
+     host's concrete backing services. Host-specific sections (ingestion, credits,
      notifications, sandbox, scale-forward seams) stayed upstream and are linked
      rather than copied — one source of truth per decision. -->
 
 # Research — Self-Contained Agent Runtime
 
-**Plan**: [plan.md](./plan.md) | **Source**: [aisat-intel research.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/research.md)
+**Plan**: [plan.md](./plan.md) | **Source**: [the reference host's research.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/research.md)
 
 ---
 

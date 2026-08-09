@@ -104,6 +104,13 @@
 - [ ] **T056** `make smoke` — a cited answer end-to-end on the standalone topology.
 - [ ] **T057** Wire `scripts/assert-profile-b-isolation.sh` into CI as a required gate.
 
+### Profile C — the minimal shape
+
+- [ ] **T057a** Implement `retrieval/sqlite.py` — dense + FTS5 + RRF. Must pass `RetrievalServiceContract` **and** `AccessFloorContract`.
+- [ ] **T057b** Emit a **startup warning** whenever `retrieval.kind: sqlite` is bound, naming the reduced floor explicitly (predicate enforced by the query, not the engine; single-tenant only). A deployment must never arrive at Profile C by accident.
+- [ ] **T057c** `NoOpMeter` plus a SQLite checkpointer binding; `make up-c && make smoke-c` runs the whole agent as **one container with one file** — no Postgres, no Redis, no bus.
+- [ ] **T057d** Test: the `sqlite` backend refuses to start when the manifest declares more than one tenant, or when `AccessFloorContract` is run in multi-principal mode. **Fail closed rather than silently offering a weaker floor** to a deployment that needs the strong one.
+
 ## Stage 10: Evaluation
 
 - [ ] **T058** Eval seed set: ≥20 prompt cases and ≥30 golden queries, including the **hard access-filter assertion** (a query that would match an above-clearance document returns nothing from it).

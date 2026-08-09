@@ -9,7 +9,7 @@
 
 `AgentDeps` is assembled **once per worker** at the graph entrypoint and passed through LangGraph's `RunnableConfig["configurable"]["deps"]`. Nodes are pure functions of `(state, config)` and never import a concrete client at module scope ([agent-graph.md](./agent-graph.md) §Dependency injection).
 
-> **The load-bearing property.** A node that reaches around a port — importing a Qdrant client, opening a NATS connection, calling a provider SDK — silently converts this repo from *portable* to *AISAT-shaped*, and nothing fails until someone tries the second host. That is why the ban is a constitutional principle (VII) and is checked by a static import scan, not left to review.
+> **The load-bearing property.** A node that reaches around a port — importing a Qdrant client, opening a NATS connection, calling a provider SDK — silently converts this repo from *portable* to *host-shaped*, and nothing fails until someone tries the second host. That is why the ban is a constitutional principle (VII) and is checked by a static import scan, not left to review.
 
 ---
 
@@ -68,7 +68,10 @@ class RetrievalService(Protocol):
 - **MUST** apply the caller's visibility predicate *inside the store*, as a pre-filter — never by post-filtering results in Python. A post-filter is a correctness bug even when the output looks identical, because it means the store returned rows the caller may not see.
 - **MUST** return `[]` rather than raise when nothing matches. `source_count == 0` is a valid answer state, not a failure.
 - `doc_ids` conjoins a document-scope term onto the predicate; it **narrows**, and can never widen past `ctx`.
-- Backends: `qdrant` (hybrid BM25/SPLADE + dense) and `pgvector` (dense HNSW + a lexical companion + RRF). Selected by `retrieval.kind` in the manifest. Both MUST pass `RetrievalServiceContract`.
+- Backends selected by `retrieval.kind`; **all** MUST pass `RetrievalServiceContract` **and** `AccessFloorContract`:
+  - `qdrant` — hybrid BM25/SPLADE + dense, payload pre-filter, paired with RLS (Profile A)
+  - `pgvector` — dense HNSW + a lexical companion + RRF, RLS as the sole floor (Profile B)
+  - `sqlite` — dense + FTS5, **predicate enforced by the query, not the engine** (Profile C). A weaker floor, single-tenant only; it MUST emit a startup warning saying so. See [agent-runtime.md § Profile C](./agent-runtime.md#profile-c--minimal-single-tenant-agent-one-container-one-file).
 
 ### `ToolRegistry`
 

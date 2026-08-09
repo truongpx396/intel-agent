@@ -143,6 +143,7 @@ When a question is ambiguous in a way that would materially change the answer, t
 
 - **AR-023**: No node may read the manifest or dereference a host-specific claim. A new domain MUST be a manifest plus a plugin, never a node edit.
 - **AR-024**: The runtime MUST run with no vector-database client and no message-bus client bound, retrieving through a single relational store and executing worker roles in-process.
+- **AR-024a**: The runtime MUST additionally support a **minimal single-tenant shape** — one container, an embedded file store, and no external service beyond a model endpoint. Because that store cannot enforce the visibility predicate at the engine level, binding it MUST emit a startup warning naming the reduced floor, and MUST **fail closed** rather than serve a deployment that declares more than one tenant.
 - **AR-025**: Every port MUST ship a conformance suite importable by host repositories, so contract drift fails a build rather than a review.
 
 ### Key Entities
@@ -200,7 +201,8 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 | AR-021 | FR-030 | runtime |
 | AR-022 | FR-030a | runtime |
 | AR-023, AR-024, AR-025 | agent-runtime.md invariants 4–6 | runtime (new: previously contract-only, now spec-level) |
-| AR-026, AR-027 | — | **new** — no upstream counterpart. AISAT reaches users over its own web SSE transport; chat platforms were never in its scope |
+| AR-024a | — | **new** — no upstream counterpart. The reference host is multi-tenant by construction and could never have offered this shape |
+| AR-026, AR-027 | — | **new** — no upstream counterpart. The reference host reaches users over its own web SSE transport; chat platforms were never in its scope |
 | AR-028 | SC-001 (extended to channels) | runtime — the access floor is channel-invariant |
 | SC-A01 | SC-001 | **shared** — release blocker in both |
 | SC-A02 | agent-runtime.md, "access floor is profile-invariant" | runtime |

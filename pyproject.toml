@@ -23,7 +23,13 @@ dependencies = [
 [project.optional-dependencies]
 # --- retrieval backends (RetrievalService port; pick exactly one per deployment) --
 pgvector = ["psycopg[binary]>=3.2", "pgvector>=0.3"]   # Profile B: one store, RLS floor
-qdrant = ["qdrant-client>=1.10"]                        # Profile A: AISAT reference
+qdrant = ["qdrant-client>=1.10"]                        # Profile A: reference host
+# Profile C: stdlib sqlite3 + FTS5 -- no dependency at all. Deliberately listed as an
+# empty extra so `intel-agent[sqlite]` is a REAL, discoverable choice rather than an
+# undocumented default. NOTE: SQLite has no row-level security, so the visibility
+# predicate is enforced by the query, not the engine. Single-tenant / dev only --
+# see contracts/agent-runtime.md, Profile C.
+sqlite = []
 
 # --- bus backends (Bus port) --------------------------------------------------
 # `inprocess` needs nothing — that is the point, and why it is not listed here.
@@ -48,6 +54,8 @@ observability = ["langfuse>=2.40", "opentelemetry-sdk>=1.25", "opentelemetry-exp
 profile-a = ["intel-agent[qdrant,jetstream,redis,memory,mcp,observability]"]
 # The shape that must boot with no Qdrant and no NATS anywhere in the tree.
 profile-b = ["intel-agent[pgvector,redis,memory,mcp,observability]"]
+# One container, one file. Weaker access floor -- single-tenant / dev only.
+profile-c = ["intel-agent[sqlite,mcp]"]
 
 [dependency-groups]
 dev = [

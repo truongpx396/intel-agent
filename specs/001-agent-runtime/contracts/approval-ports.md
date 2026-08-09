@@ -1,8 +1,8 @@
 # Contract: Human-in-the-Loop / Approval (reusable ports)
 
-**Plan**: [../plan.md](../plan.md) | **Status**: Design addition — the reusability seam that turns Phase 1's one ad-hoc human gate (the note-enrichment accept-gate) into a **first-class, reusable approval mechanism** (FR-005, FR-012, FR-040; SC-014). It factors "an action pauses for an explicit human decision before it runs" into a small set of ports so the *same* gate guards note-enrichment indexing, a long-horizon agent step, a model-suggested sensitivity bump, the agent `web_search` per-fetch confirmation, and the scoped agent `note_edit` write (FR-041) today — and broader agent writes / messaging tomorrow — without a bespoke flow per feature. The graph-native instance is the idiomatic LangGraph **`interrupt()` + `Command(resume=…)`** pattern over the checkpointer the durable `long_horizon` path already has ([agent-graph.md](./agent-graph.md)).
+**Plan**: [../plan.md](../plan.md) | **Ports**: [agent-deps.md](./agent-deps.md) | **Host obligations**: [host-integration.md](./host-integration.md) | **Status**: the **human-in-the-loop gate** — a first-class, reusable approval mechanism (AR-005, AR-004, AR-005; SC-A07). It factors "an action pauses for an explicit human decision before it runs" into a small set of ports so the *same* gate guards note-enrichment indexing, a long-horizon agent step, a model-suggested sensitivity bump, the agent `web_search` per-fetch confirmation, and the scoped agent `note_edit` write (AR-004) today — and broader agent writes / messaging tomorrow — without a bespoke flow per feature. The graph-native instance is the idiomatic LangGraph **`interrupt()` + `Command(resume=…)`** pattern over the checkpointer the durable `long_horizon` path already has ([agent-graph.md](./agent-graph.md)).
 
-Phase 1 already *promises* human-in-the-loop everywhere it matters — "the note body is never auto-rewritten without approval" ([note-enrichment-design.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/note-enrichment-design.md)), "model-suggested sensitivity … never the enforced access level without explicit human confirmation" (FR-005), "any … state-changing or message-sending action MUST likewise require explicit human confirmation" (FR-012) — but only the *first* is backed by a mechanism, and it is welded to the note flow. This contract names the seam that removes that welding, the same treatment [authorizer-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/authorizer-ports.md), [metering-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/metering-ports.md), and [notification-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/notification-ports.md) gave access control, billing, and notifications. Ports are given in Go (the kernel language); the graph-native suspend/resume is shown in Python (the agent tier) because that is where the `long_horizon` caller lives.
+Phase 1 already *promises* human-in-the-loop everywhere it matters — "the note body is never auto-rewritten without approval" ([note-enrichment-design.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/note-enrichment-design.md)), "model-suggested sensitivity … never the enforced access level without explicit human confirmation" (AR-005), "any … state-changing or message-sending action MUST likewise require explicit human confirmation" (AR-004) — but only the *first* is backed by a mechanism, and it is welded to the note flow. This contract names the seam that removes that welding, the same treatment [the `Policy` port](./agent-deps.md#policy), [the `Meter` port](./agent-deps.md#meter-recorder-approvalstore--host-supplied), and [host-integration.md](./host-integration.md) gave access control, billing, and notifications. Ports are given in Go (the kernel language); the graph-native suspend/resume is shown in Python (the agent tier) because that is where the `long_horizon` caller lives.
 
 ---
 
@@ -10,8 +10,8 @@ Phase 1 already *promises* human-in-the-loop everywhere it matters — "the note
 
 | # | Today's coupling | Evidence it is a coupling | The port that removes it |
 |---|---|---|---|
-| 1 | A gate is welded to **notes / enrichment** | The only gate is `note.enrich_status` + `POST /notes/{id}` accept ([data-model.md](../data-model.md) Note, [bff-rest.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/bff-rest.md), [note-enrichment-design.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/note-enrichment-design.md)); gating a second thing (an agent step, a sensitivity bump) has no home — it would be a second bespoke flow | `HumanGate` + opaque `Subject` — one port, N callers |
-| 2 | "Human confirmation" is an **unbacked promise** | FR-005 and FR-012 mandate confirmation with no durable representation, no resolve endpoint, and no resume path; `agent_run.status='paused'` exists in the schema but is never explained or produced | `ApprovalStore` + the `approval_request` table — a pending gate that survives a restart |
+| 1 | A gate is welded to **notes / enrichment** | The only gate is `note.enrich_status` + `POST /notes/{id}` accept ([data-model.md](../data-model.md) Note, [host-integration.md](./host-integration.md), [note-enrichment-design.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/note-enrichment-design.md)); gating a second thing (an agent step, a sensitivity bump) has no home — it would be a second bespoke flow | `HumanGate` + opaque `Subject` — one port, N callers |
+| 2 | "Human confirmation" is an **unbacked promise** | AR-005 and AR-004 mandate confirmation with no durable representation, no resolve endpoint, and no resume path; `agent_run.status='paused'` exists in the schema but is never explained or produced | `ApprovalStore` + the `approval_request` table — a pending gate that survives a restart |
 | 3 | The decision is welded to **one UX (accept the draft)** | The only verdict expressible is "accept" (persist the streamed draft); there is no reject/edit, no structured resume value a paused computation continues with | `Decision{Verdict, ResumeValue}` — approve / reject / edit, with the value the caller resumes on |
 | 4 | **Who may approve** is implicit | The note owner accepts by owning the note; there is no explicit "this approver, within this tenant, may resolve this subject" check separable from the resource | `Approver`, authorized via the [Authorizer](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/authorizer-ports.md) `Actor` — recipient-scoped like a notification |
 
@@ -39,8 +39,8 @@ CALLERS (enrich worker · long_horizon graph · ingestion metadata · agent web_
 │   POST /approvals/{id}/resolve {verdict, resume_value?}  (the note accept is this) │
 │   ApprovalStore.Resolve(id, approver, decision)  ── idempotent; approver-checked   │
 │     approve → resume the caller:                                                   │
-│        graph  → publish agent.resume.<ws> → Command(resume=decision) past the gate │
-│        enrich → POST /notes/{id} persists body+citations → normal ingestion        │
+│        graph  → publish agent.resume.<tenant> → Command(resume=decision) past gate │
+│        other  → the host's own resume path for a non-graph caller               │
 │     reject/expire → caller ends cleanly, action NEVER runs (fail-closed)           │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -177,7 +177,7 @@ type ApprovalStore interface {
 	// FIRST decision unchanged (a double-click, a redelivered resume, a retried request are no-ops,
 	// invariant 1). MUST verify `resolver` is the authorized Approver within the Tenant via the
 	// host's Authorizer (invariant 4); a non-approver receives not_found — never the gate, and never
-	// a `forbidden` that would confirm the gate exists (existence privacy, SC-001 posture).
+	// a `forbidden` that would confirm the gate exists (existence privacy, SC-A01 posture).
 	Resolve(ctx context.Context, id string, resolver Approver, d Decision) (Handle, error)
 
 	// Get / ListPending back the /approvals endpoints. Both are recipient-scoped: a viewer sees a
@@ -198,11 +198,11 @@ The store owns nothing about *what* is gated or *how* a caller resumes — only 
 ## Invariants every implementation MUST uphold
 
 1. **Durable & idempotent.** A pending gate is a durable `approval_request` row that survives a worker crash / client disconnect. `Create` is idempotent on `(tenant, kind, subject)` + `IdemKey` (one live gate per subject); `Resolve` is idempotent (a double-click / redelivered resume returns the first decision). This is what makes the whole feature exactly-once.
-2. **Refuse-before-spend / no-mutation-while-pending.** A gated action consumes **zero credits** and performs **zero side effects on the guarded resource** while its gate is pending — spend and mutation happen only *past* an approve. This is the security thesis and the direct analogue of `guard`'s refuse-before-spend (SC-007): the gate sits *before* the state change, so nothing crawled/inferred/generated enters the index or the outside world without a human (FR-005, FR-012, FR-040).
+2. **Refuse-before-spend / no-mutation-while-pending.** A gated action consumes **zero credits** and performs **zero side effects on the guarded resource** while its gate is pending — spend and mutation happen only *past* an approve. This is the security thesis and the direct analogue of `guard`'s refuse-before-spend (SC-A04): the gate sits *before* the state change, so nothing crawled/inferred/generated enters the index or the outside world without a human (AR-005, AR-004, AR-005).
 3. **Fail-closed.** Unresolved, rejected, or expired ⇒ the action **never proceeds**. There is no timeout-auto-approve and no default-allow; an expired gate is the same as a reject for the caller. A missing or ambiguous decision is a deny.
-4. **Recipient-scoped & audited (hard).** A gate is visible and resolvable **only** by an authorized `Approver` within its `Tenant`, enforced at the data layer (RLS: `user_id = current_setting('app.user_id')` within `workspace_id`) — never in application code, and never across tenants regardless of clearance (parity with SC-012). Authorization of the approver is delegated to the [Authorizer](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/authorizer-ports.md) `Actor`. Every resolution writes an `audit_log` row (FR-023).
-5. **Human-authored decision only.** The `Decision` and any edited `ResumeValue` originate from the human resolver — **never** re-derived from model, tool, or document output. This closes the injection loop: a poisoned crawled page can at worst influence a *draft the human reviews before accepting* (note-enrichment §3), and a tool result can never synthesize its own approval (parity with FR-011 and the graph's "re-derive only from `query` + pinned `intent`" rule).
-6. **Exactly-once resume, no re-spend.** Approving a paused `long_horizon` run resumes it **exactly once** from the checkpoint the interrupt wrote — it continues *past* the gate, never re-running settled nodes, so no credit already spent is spent again (parity with SC-009 and the checkpoint-lost rule in [agent-graph.md](./agent-graph.md)). A redelivered `agent.resume.<ws>` or a second approve is a no-op (invariant 1).
+4. **Recipient-scoped & audited (hard).** A gate is visible and resolvable **only** by an authorized `Approver` within its tenant — never another principal, and never across tenants (SC-A01 posture). Enforced at the data layer (*reference host:* an RLS predicate binding the approver's principal within its tenant) — never in application code. Authorization of the approver is delegated to the [`Policy` port](./agent-deps.md#policy). Every resolution writes an `audit_log` row (AR-019).
+5. **Human-authored decision only.** The `Decision` and any edited `ResumeValue` originate from the human resolver — **never** re-derived from model, tool, or document output. This closes the injection loop: a poisoned crawled page can at worst influence a *draft the human reviews before accepting* (note-enrichment §3), and a tool result can never synthesize its own approval (parity with AR-002 and the graph's "re-derive only from `query` + pinned `intent`" rule).
+6. **Exactly-once resume, no re-spend.** Approving a paused `long_horizon` run resumes it **exactly once** from the checkpoint the interrupt wrote — it continues *past* the gate, never re-running settled nodes, so no credit already spent is spent again (parity with SC-A06 and the checkpoint-lost rule in [agent-graph.md](./agent-graph.md)). A redelivered `agent.resume.<tenant>` or a second approve is a no-op (invariant 1).
 
 ---
 
@@ -222,7 +222,7 @@ def node_human_gate(state: AgentState, config: RunnableConfig) -> dict:
     #    idempotent on the run+step idem_key. ZERO spend / ZERO mutation may sit before interrupt().
     handle = deps.gate.create(pending)               # → approval_request(kind='long_horizon_action', status='pending')
 
-    # 2) SUSPEND: checkpoint + yield. The run's status becomes 'paused'; the BFF emits an
+    # 2) SUSPEND: checkpoint + yield. The run's status becomes 'paused'; the host emits an
     #    approval_request SSE event. Nothing below runs until Command(resume=…) re-enters.
     decision = interrupt({"approval_id": handle.id, **pending})   # ← blocks; state is checkpointed
 
@@ -239,9 +239,9 @@ Suspend / resume / durability mapping:
 | open gate | `deps.gate.create(...)` | `approval_request(status='pending')` + `agent_run.status='paused'` | — |
 | suspend | `interrupt(payload)` | Redis checkpoint at the `human_gate` boundary (the interrupt payload rides the checkpoint) | `approval_request` SSE event; `GET /approvals` |
 | resolve | (out of graph) | `approval_request(status='approved'\|'rejected')` + `audit_log` | `POST /approvals/{id}/resolve` |
-| resume | `Command(resume=decision)` | run re-enters at the checkpoint, `status='running'` | `agent.resume.<ws>` → worker loads the checkpoint |
+| resume | `Command(resume=decision)` | run re-enters at the checkpoint, `status='running'` | `agent.resume.<tenant>` → worker loads the checkpoint |
 
-The BFF `POST /approvals/{id}/resolve` publishes `agent.resume.<ws>` (payload `{run_id, approval_id, decision, …}`, [nats-subjects.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/nats-subjects.md)); the long-horizon worker loads the paused run's checkpoint by `agent_run.state.thread_id` and resumes with `Command(resume=decision)`. Because resume re-enters *at* the checkpoint, invariant 6 holds *across nodes* — the settled nodes before `human_gate` are not re-run and their spend is not repeated. **This capability exists only in the durable compiled form**; the interactive form has no durable approval home and disables `human_gate`, so an interactive query can never silently pause (design thesis, [agent-graph.md](./agent-graph.md)).
+The host's resolve endpoint publishes `agent.resume.<tenant>` (payload `{run_id, approval_id, decision, …}`, [the `Bus` port](./agent-deps.md#memoryservice-streamwriter-checkpointer-bus)); the long-horizon worker loads the paused run's checkpoint by `agent_run.state.thread_id` and resumes with `Command(resume=decision)`. Because resume re-enters *at* the checkpoint, invariant 6 holds *across nodes* — the settled nodes before `human_gate` are not re-run and their spend is not repeated. **This capability exists only in the durable compiled form**; the interactive form has no durable approval home and disables `human_gate`, so an interactive query can never silently pause (design thesis, [agent-graph.md](./agent-graph.md)).
 
 > **Implementation sharp edge — the interrupted node's prefix re-executes on resume.** LangGraph resumes an interrupted node by **re-running it from the top** up to the `interrupt()` call; the graph does *not* snapshot mid-function. So everything *before* `interrupt()` — here, `deps.gate.create(...)` — runs **twice**: once when the gate opens, once on resume. Two rules make this safe, and they are load-bearing, not incidental: (1) `ApprovalStore.Create` MUST be **idempotent** on the run+step `IdemKey` (invariant 1), so the second run returns the same `Handle` rather than opening a duplicate gate; and (2) **no credit `billing.deduct` and no resource mutation may sit in the node prefix** — spend and mutation belong strictly *after* the `interrupt()` (invariant 2), so the double-executed prefix has no billable or state-changing effect. An implementer who puts a non-idempotent side effect (a second ledger write, an un-keyed insert, an outbound call) before the `interrupt()` breaks exactly-once. Node granularity is the unit of "settled"; *within* the gate node, treat only the code after `interrupt()` as run-once. (This mirrors the same re-entrancy discipline Temporal/Step-Functions activities require, and is documented LangGraph `interrupt` behavior.)
 
@@ -253,19 +253,19 @@ One port, several callers — nothing in the kernel knows what any of them gate:
 
 | Generic port / type | ContextEngine (Phase 1) binding |
 |---|---|
-| `Tenant` | `{Kind:"workspace", ID:workspace_id}` — RLS `app.workspace_id` |
+| `Tenant` | `{Kind:<host tenant kind>, ID:<opaque tenant key>}` — lowered to the store's session context (*reference host:* `app.workspace_id`) |
 | `Approver` | `{Kind:"user", ID:user_id}` — RLS `app.user_id`; authorization via the Authorizer `Actor` |
 | `Subject` (`enrich_accept`) | `{Kind:"note", ID:note_id}` — gates indexing crawled/distilled content; resolve = `POST /notes/{id}` |
 | `Subject` (`long_horizon_action`) | `{Kind:"agent_run_step", ID:run_id+step}` — gates a flagged durable step; resolve = `/approvals/{id}/resolve` → `Command(resume)` |
-| `Subject` (`sensitivity_confirm`) | `{Kind:"document", ID:doc_id}` — gates applying a model-suggested `access_level` above the uploader default (FR-005) |
-| `Subject` (`web_search`) | `{Kind:"web_search", ID:query_hash}` — gates each agent web fetch (FR-041); resolve → `web_distill` runs |
-| `Subject` (`note_edit`) | `{Kind:"note", ID:note_id}` — gates an agent note write bounded by `Permit(ActionUpdate)`+`WriteEnvelope`, `Clearance=min(agent,owner)` (FR-041, SC-015); resolve → commit + re-index |
+| `Subject` (`sensitivity_confirm`) | `{Kind:"document", ID:doc_id}` — gates applying a model-suggested `access_level` above the uploader default (AR-005) |
+| `Subject` (`web_search`) | `{Kind:"web_search", ID:query_hash}` — gates each agent web fetch (AR-004); resolve → `web_distill` runs |
+| `Subject` (`note_edit`) | `{Kind:"note", ID:note_id}` — gates an agent note write bounded by `Permit(ActionUpdate)`+`WriteEnvelope`, `Clearance=min(agent,owner)` (AR-004, SC-A08); resolve → commit + re-index |
 | `Decision.ResumeValue` | enrich: the accepted body+citations · agent step/web: the injected `approval_decision` · sensitivity: the confirmed level · note_edit: the approved (optionally human-edited) body |
 | `ApprovalStore` | Postgres `approval_request` (RLS recipient-scoped) + the LangGraph Redis checkpointer for the suspended-run payload |
 | `HumanGate` (SUSPEND) | the `human_gate` graph node (`interrupt`/`Command(resume)`) — long_horizon only |
 | `HumanGate` (ASYNC) | the enrich worker + ingestion metadata step returning a `Handle` and parking |
 
-**Phase-1 graph callers.** The agent `web_search` per-fetch confirmation is `gate.Require(Request{Kind:"web_search", Subject:{Kind:"web_search", ID:query_hash}})` inside the `web_search_decide` node, and the agent `note_edit` write is `gate.Require(Request{Kind:"note_edit", Subject:{Kind:"note", ID:note_id}})` before the commit — both SUSPEND-shape callers in the durable form (FR-041; [agent-graph.md](./agent-graph.md#human-in-the-loop-the-human_gate-node-durable-form)). A future broad write / messaging tool is one more caller of the same shape, no new mechanism.
+**Phase-1 graph callers.** The agent `web_search` per-fetch confirmation is `gate.Require(Request{Kind:"web_search", Subject:{Kind:"web_search", ID:query_hash}})` inside the `web_search_decide` node, and the agent `note_edit` write is `gate.Require(Request{Kind:"note_edit", Subject:{Kind:"note", ID:note_id}})` before the commit — both SUSPEND-shape callers in the durable form (AR-004; [agent-graph.md](./agent-graph.md#human-in-the-loop-the-human_gate-node-durable-form)). A future broad write / messaging tool is one more caller of the same shape, no new mechanism.
 
 ---
 
@@ -348,12 +348,12 @@ def test_gate_decision_is_human_never_tool_output(durable_graph, fake_deps):
 
 ## Deployment topology & extraction
 
-The gate is a small kernel module (`backend-go/kernel/approval/`) with the same ports-and-adapters discipline as the other three: `domain` (types + invariants) → `ports` (`HumanGate`, `ApprovalStore`) → `adapters/driven` (the Postgres `approval_request` store; the graph SUSPEND shape lives in the Python tier and calls the same store over the BFF). A `depguard` rule forbids `kernel/approval/**` from importing `internal/**`, so it is extraction-ready (`git mv` + `go mod init` compiles) exactly like `kernel/metering` and `kernel/notify`.
+The gate is a small host-side module with the same ports-and-adapters discipline as the other three: `domain` (types + invariants) → `ports` (`HumanGate`, `ApprovalStore`) → `adapters/driven` (the Postgres `approval_request` store; the graph SUSPEND shape lives in the Python tier and calls the same store over the BFF). A `depguard` rule forbids `kernel/approval/**` from importing `internal/**`, so it is extraction-ready (`git mv` + `go mod init` compiles) exactly like `kernel/metering` and `kernel/notify`.
 
 It does **not** stand alone conceptually — it **composes** the other ports rather than duplicating them:
-- **Authorizer** ([authorizer-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/authorizer-ports.md)) decides *who may approve* (invariant 4): `ApprovalStore.Resolve` checks the resolver's `Actor`, it does not re-implement authorization.
-- **Metering** ([metering-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/metering-ports.md)) is what invariant 2 gates: a pending gate simply means no `billing.deduct` is published — the gate does not touch the ledger, it *withholds* the spend the caller would otherwise emit.
-- **Notification** ([notification-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/notification-ports.md)) is the optional surface: pinging an approver that a gate awaits them is one more `Topic` (`approval_requested`) — additive, not required (the live `approval_request` SSE event + the `GET /approvals` inbox already surface it).
+- **Authorizer** ([the `Policy` port](./agent-deps.md#policy)) decides *who may approve* (invariant 4): `ApprovalStore.Resolve` checks the resolver's `Actor`, it does not re-implement authorization.
+- **Metering** ([the `Meter` port](./agent-deps.md#meter-recorder-approvalstore--host-supplied)) is what invariant 2 gates: a pending gate simply means no `billing.deduct` is published — the gate does not touch the ledger, it *withholds* the spend the caller would otherwise emit.
+- **Notification** ([host-integration.md](./host-integration.md)) is the optional surface: pinging an approver that a gate awaits them is one more `Topic` (`approval_requested`) — additive, not required (the live `approval_request` SSE event + the `GET /approvals` inbox already surface it).
 
 **Recommended posture:** embedded in the kernel; there is no service-extraction pressure because a gate is a fast DB write plus a checkpoint the graph already owns.
 
@@ -367,7 +367,7 @@ It does **not** stand alone conceptually — it **composes** the other ports rat
 - [ ] **Fail-closed by default** — unresolved/expired ⇒ deny; a scheduled `Expire` sweep runs; no timeout-auto-approve (invariant 3).
 - [ ] **Human-authored decisions** — the resume value comes from the human; no code path lets tool/document output produce a `Decision` (invariant 5).
 - [ ] **Exactly-once resume** — the durable caller resumes from a checkpoint past the gate; a redelivered resume is a no-op; no settled spend repeats (invariant 6).
-- [ ] **Idempotency backstop present** — `UNIQUE(workspace_id, kind, subject_id)` (one live gate/subject) + a create `IdemKey`; `Resolve` returns the first decision on replay.
+- [ ] **Idempotency backstop present** — `UNIQUE(tenant, kind, subject_id)` (one live gate/subject) + a create `IdemKey`; `Resolve` returns the first decision on replay.
 - [ ] **Extraction-clean** — nothing under `kernel/approval/` imports the product; `depguard` enforces it.
 
 ## Non-goals (stays in the host / other ports, by design)

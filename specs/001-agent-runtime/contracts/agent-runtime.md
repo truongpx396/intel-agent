@@ -1,15 +1,15 @@
 # Contract: Self-Contained Agent Runtime (manifest + domain-plugin seam)
 
-**Plan**: [../plan.md](../plan.md) | **Graph internals**: [agent-graph.md](./agent-graph.md) | **Access model**: [authorizer-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/authorizer-ports.md) | **Status**: The **composition/deployment** contract for the agent tier. It defines a **first-class, conformance-tested self-contained profile** — the one LangGraph runtime run as a config-first agent that adapts to a new domain by swapping a **manifest** (config) plus a thin **domain plugin** (code), on a swappable set of backing services, without forking the graph.
+**Plan**: [../plan.md](../plan.md) | **Graph internals**: [agent-graph.md](./agent-graph.md) | **Access model**: [the `Policy` port](./agent-deps.md#policy) | **Status**: The **composition/deployment** contract for the agent tier. It defines a **first-class, conformance-tested self-contained profile** — the one LangGraph runtime run as a config-first agent that adapts to a new domain by swapping a **manifest** (config) plus a thin **domain plugin** (code), on a swappable set of backing services, without forking the graph.
 
 **Two axes, deliberately independent — read this before the no-behavior-change reflex:**
 
-- **Alignment axis (unchanged default).** The AISAT Phase-1 deployment — Go kernel + Python tier + Qdrant + NATS JetStream + Redis + Postgres — is the *reference profile* and is **not altered** by this contract. The phrase 'changes no Phase-1 behavior' applies **only** to that default profile: nothing here rewires how AISAT itself ships.
-- **Capability axis (first-class, tested).** 'Runs self-contained in another system' is a **supported deployment profile**, not an aspirational seam. It is **proven by conformance tests** (second-domain reuse + the backing-service swap matrix below), exactly as `PricerContract` *proves* the metering-reuse claim instead of asserting it. The AISAT default is **one point** in this profile space, not the only shape the runtime can take.
+- **Alignment axis (the reference default).** The reference host's deployment — a policy/billing kernel + this Python tier + a vector store + NATS JetStream + Redis + Postgres — is the *reference profile* and is **not altered** by this contract. The phrase 'changes no Phase-1 behavior' applies **only** to that default profile: nothing here rewires how the reference host itself ships.
+- **Capability axis (first-class, tested).** 'Runs self-contained in another system' is a **supported deployment profile**, not an aspirational seam. It is **proven by conformance tests** (second-domain reuse + the backing-service swap matrix below) rather than asserted. The reference default is **one point** in this profile space, not the only shape the runtime can take.
 
-The two do not trade off: the default stays byte-identical *because* every reuse point is a named port with a swap test, so exercising a different profile can never regress the reference one. This is the counterpart to the internal [agent-graph.md](./agent-graph.md) `AgentDeps`/`SecurityCtx` seam and the [authorizer-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/authorizer-ports.md) `Policy` seam: those say *the graph is extractable*; this says *how a whole agent is composed, deployed, and proven runnable elsewhere*. It is explicitly informed by config-driven agent gateways (GoClaw/OpenClaw — 'agent = identity + tools + provider + context files'), adopting their config-first ergonomics **without** adopting their coarser trust model.
+The two do not trade off: the default stays byte-identical *because* every reuse point is a named port with a swap test, so exercising a different profile can never regress the reference one. This is the counterpart to the internal [agent-graph.md](./agent-graph.md) `AgentDeps`/`SecurityCtx` seam and the [the `Policy` port](./agent-deps.md#policy) `Policy` seam: those say *the graph is extractable*; this says *how a whole agent is composed, deployed, and proven runnable elsewhere*. It is explicitly informed by config-driven agent gateways (GoClaw/OpenClaw — 'agent = identity + tools + provider + context files'), adopting their config-first ergonomics **without** adopting their coarser trust model.
 
-> **The load-bearing rule.** Everything the runtime *reads* is **config**; the only per-domain **code** is (1) the tool bodies and (2) the `Authorizer` `Policy`. Config may *select* a policy; it may never *be* one. The data-layer authorization floor (row-level pre-filter, SC-001 release blocker) is enforced **below** the agent and is identical for every profile — a manifest can narrow what an agent may do, never widen what a principal may see. On the AISAT profile that floor is Postgres RLS + Qdrant payload pre-filter; on a single-store profile it collapses to Postgres RLS alone (see the swap matrix), which is *fewer* copies of the predicate, not fewer guarantees.
+> **The load-bearing rule.** Everything the runtime *reads* is **config**; the only per-domain **code** is (1) the tool bodies and (2) the `Authorizer` `Policy`. Config may *select* a policy; it may never *be* one. The data-layer authorization floor (row-level pre-filter, SC-A01 release blocker) is enforced **below** the agent and is identical for every profile — a manifest can narrow what an agent may do, never widen what a principal may see. On the reference profile that floor is Postgres RLS plus a vector payload pre-filter; on a single-store profile it collapses to Postgres RLS alone (see the swap matrix), which is *fewer* copies of the predicate, not fewer guarantees.
 
 ---
 
@@ -29,15 +29,15 @@ The two do not trade off: the default stays byte-identical *because* every reuse
 
 | Borrow (config-first ergonomics) | How it lands here |
 |---|---|
-| **Agent-as-config record** (identity + tools + provider + context files) | `AgentManifest`, persisted as the existing `agent_policies` row extended additively ([data-model.md](../data-model.md)) |
-| **Provider/model registry as config** | Already the LLM gateway aliases (`fast`/`smart`/`embed`/`rerank`, [llm-gateway.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/llm-gateway.md)); the manifest only *names* aliases |
+| **Agent-as-config record** (identity + tools + provider + context files) | `AgentManifest`, persisted as the existing the manifest's backing row, extended additively ([data-model.md](../data-model.md)) |
+| **Provider/model registry as config** | Already the LLM gateway aliases (`fast`/`smart`/`embed`/`rerank`, [the `LLMGatewayClient` port](./agent-deps.md#llmgatewayclient)); the manifest only *names* aliases |
 | **Tools/skills as a plugin catalog** (MCP registration) | The manifest's `allowed_tools[]` selects from the `ToolRegistry` / MCP server ([mcp-tools.md](./mcp-tools.md)); a new tool is a registered impl, not a graph edit |
 | **Channels as adapters** (Telegram/Slack/web/…) | New `StreamWriter`/transport adapters behind the already-decoupled streaming seam ([agent-graph.md](./agent-graph.md) Streaming); the graph is unchanged |
 | **Single self-contained deployable** | One worker image, manifest-driven — matches the `cmd/worker` stateless role (plan.md) |
 
 | Deliberately **not** borrowed | Why |
 |---|---|
-| **Authorization enforced *around the tool* (RBAC/permission layers)** | Would silently downgrade the SC-001 guarantee. Isolation stays **below** the agent at row granularity (RLS + Qdrant pre-filter); the manifest never becomes the access boundary |
+| **Authorization enforced *around the tool* (RBAC/permission layers)** | Would silently downgrade the SC-A01 guarantee. Isolation stays **below** the agent at row granularity; the manifest never becomes the access boundary |
 | **Broad `exec`/filesystem/write tool surface by default** | Phase 1 is read-mostly + two HITL-gated actions ([mcp-tools.md](./mcp-tools.md) Category D). New power tools are added deliberately behind the sandbox + human-gate, not imported wholesale |
 
 ---
@@ -50,8 +50,8 @@ The complete, portable description of one agent. Everything here is data the run
 
 ```yaml
 # an agent = one manifest row (backed by agent_policies, extended additively)
-id:            aisat-default
-tenant:        <workspace_id>                 # opaque; the runtime never interprets it
+id:            <agent-id>
+tenant:        <opaque-tenant-key>            # opaque; the runtime never interprets it
 agent_role:    user                           # label the allowed_tools allowlist is keyed on
 prompts:                                       # refs into prompt assets (T074), never inline secrets
   system:      prompts/response_format
@@ -71,7 +71,7 @@ hooks_enabled: [audit, langfuse]
 ```
 
 - The manifest **selects** implementations by name (`retrieval.kind`, `policy`, `models.*`); it does not contain them.
-- `policy: single_axis` names a `DomainPlugin`-provided `Authorizer` `Policy` ([authorizer-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/authorizer-ports.md)). Swapping to `per_customer` / `role_x_course` is a manifest edit **plus** a registered policy impl — never a manifest-only widening.
+- `policy: <name>` names a `DomainPlugin`-provided `Policy` ([the `Policy` port](./agent-deps.md#policy)). Swapping to `per_customer` / `role_x_course` is a manifest edit **plus** a registered policy impl — never a manifest-only widening.
 - A different product ships a different manifest (`prompts`, `allowed_tools`, `retrieval`, `channels`, `policy`) and its own plugin; the graph binary is byte-identical.
 
 ### 2. `DomainPlugin` — code (exactly two interfaces)
@@ -109,7 +109,7 @@ AgentManifest (config)  ──selects──►  DomainPlugin (code: Tools + Poli
                                                  │
                                     per run: ctx (tenant/principal/claims) stamped by trusted layer
                                                  │
-                              RLS + Qdrant pre-filter enforce SC-001 BELOW the graph, every manifest
+         the store-side visibility predicate enforces SC-A01 BELOW the graph, every manifest
 ```
 
 The manifest is resolved to `AgentDeps` at the graph entrypoint (`routers/query.py`), exactly where DI already happens — no node is aware a manifest exists.
@@ -118,30 +118,55 @@ The manifest is resolved to `AgentDeps` at the graph entrypoint (`routers/query.
 
 ## Backing-service swap matrix
 
-What a self-contained deployment may swap, and *how much* it costs to swap — the honest truth by tier (config = env only; port backend = a config-selected backend/adapter of an existing port, gated by a conformance test). Every row keeps the SC-001 floor; none is a manifest-only widening.
+What a self-contained deployment may swap, and *how much* it costs to swap — the honest truth by tier (config = env only; port backend = a config-selected backend/adapter of an existing port, gated by a conformance test). Every row keeps the SC-A01 floor; none is a manifest-only widening.
 
-| Backing service | AISAT default | Swap to | Cost of the swap | Mechanism |
+| Backing service | Reference default | Swap to | Cost of the swap | Mechanism |
 |---|---|---|---|---|
-| **LLM gateway** | LiteLLM (self-hosted) | any OpenAI-wire endpoint (LiteLLM/Bifrost/direct) | **config** | `LLMGatewayClient` base-URL; the manifest only *names* aliases ([llm-gateway.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/llm-gateway.md)) |
+| **LLM gateway** | LiteLLM (self-hosted) | any OpenAI-wire endpoint (LiteLLM/Bifrost/direct) | **config** | `LLMGatewayClient` base-URL; the manifest only *names* aliases ([the `LLMGatewayClient` port](./agent-deps.md#llmgatewayclient)) |
 | **Observability** | Langfuse + OTel | Langfuse endpoint, or none | **config** | OTel exporter env; tracing degrades cleanly if unset — no node depends on it |
 | **Vector store (endpoint)** | Qdrant (managed/self-hosted) | any Qdrant endpoint | **config** | `RetrievalService` (Qdrant impl) endpoint env |
-| **Vector store (engine)** | Qdrant | **Postgres + pgvector** (single-store) | **port backend** — the existing `RetrievalService` port with a **pgvector backend** selected by `retrieval.kind` (`qdrant`\|`pgvector`); no new service class | collapses the visibility predicate to **one** lowering (RLS-native) instead of the RLS+Qdrant parity pair — *simpler* floor. Caveat: Qdrant's native hybrid (BM25+dense+RRF) must be reproduced with `pgvector` + a lexical companion (`tsvector`/ParadeDB) to hold **retrieval quality** — the authz floor is easier, retrieval-quality parity is the work ([authorizer-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/authorizer-ports.md) `Lowerer`) |
-| **Async bus** | NATS JetStream | **Redis Streams**, or **in-process** (no bus) | **port backend** — the `Bus` port with `jetstream` / `redis_streams` / `inprocess` adapters selected by `bus.kind`; **or** free by collapsing worker roles into direct calls | JetStream primitives (durable pull consumers, DLQ redelivery, lag-autoscale) are named in [nats-subjects.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/nats-subjects.md); the `Bus` port fronts `publish/subscribe/queue-group/redeliver` so Redis-Streams (`XADD`/consumer-groups/`XCLAIM`) or an in-proc executor satisfy the same semantics. A minimal single-container agent needs **no** bus — the worker roles run as in-process function calls; the bus earns its keep only when scaling out |
+| **Vector store (engine)** | Qdrant | **Postgres + pgvector** (single-store) | **port backend** — the existing `RetrievalService` port with a **pgvector backend** selected by `retrieval.kind` (`qdrant`\|`pgvector`); no new service class | collapses the visibility predicate to **one** lowering (RLS-native) instead of the RLS+Qdrant parity pair — *simpler* floor. Caveat: Qdrant's native hybrid (BM25+dense+RRF) must be reproduced with `pgvector` + a lexical companion (`tsvector`/ParadeDB) to hold **retrieval quality** — the authz floor is easier, retrieval-quality parity is the work ([the `Policy` port](./agent-deps.md#policy) `Lowerer`) |
+| **Async bus** | NATS JetStream | **Redis Streams**, or **in-process** (no bus) | **port backend** — the `Bus` port with `jetstream` / `redis_streams` / `inprocess` adapters selected by `bus.kind`; **or** free by collapsing worker roles into direct calls | JetStream primitives (durable pull consumers, DLQ redelivery, lag-autoscale) are named in [the `Bus` port](./agent-deps.md#memoryservice-streamwriter-checkpointer-bus); the `Bus` port fronts `publish/subscribe/queue-group/redeliver` so Redis-Streams (`XADD`/consumer-groups/`XCLAIM`) or an in-proc executor satisfy the same semantics. A minimal single-container agent needs **no** bus — the worker roles run as in-process function calls; the bus earns its keep only when scaling out |
 | **Checkpointer** | Redis (`RedisSaver`) | Postgres / SQLite `BaseCheckpointSaver` | **config** | any LangGraph checkpointer; the durable form is checkpointer-agnostic ([agent-graph.md](./agent-graph.md)) |
 | **Tool source** | in-process shared-library (`ToolRegistry`) | a **remote** domain MCP server (config-only agent) | **port backend** — the `ToolRegistry` port with `inprocess` / `mcp_client` bindings selected by `tools.kind` | `inprocess` calls the shared tool library directly (enforcement in the shared wrapper); `mcp_client` points the *unmodified* graph at a remote MCP `url` + device PAT, delegating enforcement to that server's **own boundary** (RLS GUCs from the PAT, allowlist, audit — [mcp-tools.md](./mcp-tools.md)). Lets a thin agent adapt to a domain by **config alone** when a compliant domain server exists; the config selects a tool *source*, never the access floor (conformance: T060g) |
 | **Object store** | S3 | any S3-compatible (MinIO) | **config** | ingestion staging only; not on the agent read path |
+| **Store (single-tenant floor)** | Postgres + RLS | **SQLite** (`retrieval.kind: sqlite`) | **port backend — and a WEAKER FLOOR** | the only row in this table that costs a *guarantee* rather than a *component*. SQLite has no RLS, so the visibility predicate is enforced by the **query** rather than by the engine, and a bug in that query can leak. Single-tenant / dev only — see [Profile C](#profile-c--minimal-single-tenant-agent-one-container-one-file) |
+| **Metering** | host ledger via `Meter` | **no-op `Meter`** | **config** | the runtime never wrote a ledger anyway; a no-op means nobody is counting, which is fine for a personal agent and never fine for a paid one |
 
 Two named, supported shapes. Both run the *same* graph binary and the *same* manifest schema; they differ only in which backing services and which runtimes are present. Neither is a fork.
 
-### Profile A — AISAT reference (the unchanged default)
+### Profile A — reference host (the full deployment)
 
-**Go kernel + Python agent tier + Qdrant + JetStream + Redis + Postgres + LiteLLM + Langfuse.** The full product. The Go kernel is mandatory here for the three concerns deliberately kept out of Python — the **single `credit_ledger` writer** (SC-006), **auth/session**, and the **RLS-GUC tenant middleware**. This is Phase 1 exactly as specified; this contract adds nothing to it.
+**A host kernel + this Python agent tier + a vector store + a durable bus + Redis + Postgres + an OpenAI-wire gateway + tracing.** The full deployment. The host kernel is mandatory here for the three concerns deliberately kept outside the runtime — being the **single writer of the credit ledger**, **auth/session**, and the **tenant session-context middleware**. This contract adds nothing to it.
 
 ### Profile B — self-contained single-domain agent (the extraction target)
 
-**One Python container (agent + optional in-process worker roles) + Postgres/pgvector + Redis + LiteLLM + Langfuse.** The [Extraction checklist](./agent-graph.md#extraction-checklist) profile made concrete: the async bus collapses to in-process calls (or Redis Streams via the `Bus` port when scale-out is wanted), retrieval binds the `RetrievalService` **pgvector backend** (`retrieval.kind: pgvector`) so **one Postgres is both the store and the SC-001 floor** (RLS), and metering/auth become **host concerns the embedding system re-satisfies** (the graph declares *that* they run via `guard` + the tool-policy wrapper, not *how* the host bills or authenticates). This is the OpenClaw/GoClaw-style 'single deployable' shape — with the row-level authorization floor kept intact rather than downgraded to tool-boundary RBAC.
+**One Python container (agent + optional in-process worker roles) + Postgres/pgvector + Redis + LiteLLM + Langfuse.** The [Extraction checklist](./agent-graph.md#extraction-checklist) profile made concrete: the async bus collapses to in-process calls (or Redis Streams via the `Bus` port when scale-out is wanted), retrieval binds the `RetrievalService` **pgvector backend** (`retrieval.kind: pgvector`) so **one Postgres is both the store and the SC-A01 floor** (RLS), and metering/auth become **host concerns the embedding system re-satisfies** (the graph declares *that* they run via `guard` + the tool-policy wrapper, not *how* the host bills or authenticates). This is the OpenClaw/GoClaw-style 'single deployable' shape — with the row-level authorization floor kept intact rather than downgraded to tool-boundary RBAC.
 
-**The one boundary that does not move:** authorization is still enforced *below* the agent (RLS in that same Postgres), never around the tool. Profile B drops the *transport and vector engine*, never the access floor. An embedding host that wants AISAT's money/auth guarantees adds the Go kernel back and is simply on Profile A — the profiles are a **superset relation, not a fork**.
+**The one boundary that does not move:** authorization is still enforced *below* the agent (RLS in that same Postgres), never around the tool. Profile B drops the *transport and vector engine*, never the access floor. A host that wants the full money/auth guarantees adds its kernel back and is simply on Profile A — the profiles are a **superset relation, not a fork**.
+
+### Profile C — minimal single-tenant agent (one container, one file)
+
+**One Python container + SQLite + an OpenAI-wire endpoint.** No Postgres, no Redis, no bus, no separate anything: `retrieval.kind: sqlite`, `bus.kind: inprocess`, a SQLite checkpointer, and a **no-op `Meter`**. This is the config-first single-deployable shape — a personal or single-tenant agent that runs on a laptop or a $5 VPS.
+
+**Read this before choosing it — the floor is genuinely weaker here.**
+
+Profiles A and B enforce visibility with a *database-level* mechanism: even a buggy retrieval query cannot return a row the caller may not see, because the engine refuses. **SQLite has no row-level security.** On Profile C the predicate lives in the query the `RetrievalService` builds:
+
+| | Profiles A / B | Profile C |
+|---|---|---|
+| Predicate applied | in the store, **enforced by the engine** | in the store, **enforced by the query** |
+| A bug in that query | cannot leak — RLS refuses | **can leak** |
+| Defense in depth | yes | **none — single point of failure** |
+
+This is a **real reduction**, not a re-labelling, and it is the only place in this contract where a profile trades away a *guarantee* rather than a *component*. Everywhere else, "fewer lowerings is fewer copies to keep in parity, not fewer guarantees" — that sentence does **not** apply here, and stretching it to cover Profile C would be the dishonest move this table exists to prevent.
+
+It is defensible exactly when the guarantee has nothing to protect:
+
+- **Suitable** — single-tenant, single-principal (a personal agent over your own corpus): there is no cross-tenant row for a bug to expose, so the engine-level floor is enforcing an empty constraint. Also development and evaluation, where the corpus is disposable.
+- **Not suitable** — any multi-tenant deployment, or any deployment where principals have different visibility over a shared corpus, even within one tenant. Use Profile B: the pgvector backend already exists and buys RLS for the price of one Postgres.
+
+`AccessFloorContract` still passes on Profile C — the predicate is still applied below the agent, and a cross-tenant row is still `not_found`. **The suite proves the predicate is correct; it cannot prove the engine would catch it being wrong.** That distinction is the entire content of this section, so a `sqlite` backend MUST emit a startup warning naming it — a deployment should never arrive at Profile C by accident.
 
 ---
 
@@ -153,28 +178,28 @@ The `AgentManifest` is **not** a new table. It is the existing `agent_policies` 
 
 ## Invariants
 
-1. **Config selects, code enforces.** A manifest may name a `policy`; it can never *be* one. The `Authorizer` `Policy` and RLS/Qdrant lowerings are the enforcement floor for every manifest ([authorizer-ports.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/001-contextengine-mvp/contracts/authorizer-ports.md)).
+1. **Config selects, code enforces.** A manifest may name a `policy`; it can never *be* one. The `Authorizer` `Policy` and RLS/Qdrant lowerings are the enforcement floor for every manifest ([the `Policy` port](./agent-deps.md#policy)).
 2. **A manifest narrows, never widens.** `allowed_tools`, `can_write`, and budgets can only *restrict* an agent within what the principal's clearance already permits. No manifest field raises what a `principal` may see — that is `ctx.claims` + the `Policy`, stamped by the trusted layer, never the manifest.
 3. **Manifest is per-run, not per-worker.** Loaded from the row at run start; workers hold no manifest state, so any worker can serve any tenant's run and scaling is replica count alone (plan.md stateless-worker + JetStream seams).
 4. **Graph is manifest-blind.** No node reads the manifest; it only sees `AgentDeps` + `ctx`. Adding a domain changes deps and config, never a node (parity with the [agent-graph.md](./agent-graph.md) Extraction checklist).
 5. **One image, N domains.** The runtime binary is identical across domains and across replica counts; a domain is manifest + plugin, a scale-out is `replicas++`.
-6. **Profiles are a superset, never a fork.** Profile B (self-contained) and Profile A (full AISAT) run the *same* graph binary and manifest schema; A is B plus the Go kernel (billing/auth/RLS-middleware) and the Qdrant+JetStream backing services. Swapping a backing service is a port impl or a config value — never a source fork of the graph or the nodes.
-7. **The access floor is profile-invariant.** Every profile enforces visibility *below* the agent at row granularity. Profile A lowers the predicate to RLS **and** the Qdrant filter; Profile B lowers it to RLS alone. Fewer lowerings is fewer copies to keep in parity, not fewer guarantees — SC-001 holds identically on both.
+6. **Profiles are a superset, never a fork.** Every profile runs the *same* graph binary and manifest schema; A is B plus the Go kernel (billing/auth/RLS-middleware) and the Qdrant+JetStream backing services. Swapping a backing service is a port impl or a config value — never a source fork of the graph or the nodes.
+7. **The access floor is profile-invariant.** Every profile enforces visibility *below* the agent at row granularity. Profile A lowers the predicate to RLS **and** the Qdrant filter; Profile B lowers it to RLS alone. Fewer lowerings is fewer copies to keep in parity, not fewer guarantees — SC-A01 holds identically on both.
 
 ---
 
 ## Contract test obligations
 
 - **Second-domain reuse** (the load-bearing proof): a **test-only** `DomainPlugin` (e.g. a `support-bot` fixture with tools `get_ticket`/`search_kb` and a `per_customer` `Policy`) plus its manifest runs the *unmodified* graph green end-to-end — same discipline as the `PricerContract`/`HashChainContract` "prove reuse with a second fixture" tests, extended to the whole runtime.
-- **Authz floor holds regardless of manifest**: a manifest that lists a tool cannot return data the `Policy`/RLS would deny; a crafted manifest with a broader `allowed_tools` never surfaces a row above the principal's clearance (SC-001 is a deps/RLS property, not a manifest property).
+- **Authz floor holds regardless of manifest**: a manifest that lists a tool cannot return data the `Policy`/RLS would deny; a crafted manifest with a broader `allowed_tools` never surfaces a row above the principal's clearance (SC-A01 is a deps/RLS property, not a manifest property).
 - **Manifest-load determinism**: two runs with the same `agent_policies` row resolve to the same `AgentDeps` wiring; a missing/invalid manifest field fails **closed** at load (no partial-permission agent).
 - **Manifest is per-run**: two concurrent runs for different tenants on the *same* worker never share manifest-derived state (no worker-global manifest cache keyed off the first run).
 - **Channel-adapter swap**: attaching a second `channels` adapter (e.g. a non-SSE transport) changes no node and no graph output on a golden query (parity with the streaming-decoupling test).
 - **Backing-service swap proves the profile, not just the seam**: the graph runs green end-to-end under a **Profile-B wiring** — the `RetrievalService` **pgvector backend** standing in for the Qdrant backend **and** an in-process (no-bus) executor standing in for JetStream — producing a cited answer on a golden query with **no Qdrant and no NATS client bound** (the same 'prove reuse with a second fixture' discipline as `PricerContract`, now applied to the *deployment* seam). This is the test that makes 'runs self-contained' a checked capability rather than a claim.
-- **Access floor is profile-invariant**: the SC-001 access-correctness suite passes **unchanged** under the Profile-B (RLS-only) wiring — a cross-clearance / cross-tenant row is a `not_found`, never surfaced — proving the floor is a property of the lowering, not of Qdrant's presence.
+- **Access floor is profile-invariant**: the SC-A01 access-correctness suite passes **unchanged** under the Profile-B (RLS-only) wiring — a cross-clearance / cross-tenant row is a `not_found`, never surfaced — proving the floor is a property of the lowering, not of Qdrant's presence.
 
 ---
 
 ## Phase boundary
 
-Phase 1 **ships and operates Profile A** (the AISAT reference) as the production deployment, with exactly **one** manifest (backed by `agent_policies`) and **one** `DomainPlugin` (the AISAT tools + `SingleAxisPolicy`). Profile B is a **first-class supported profile that is built *and made runnable* in Phase 1** — all three build items land as Phase-1 tasks: (1) the `RetrievalService` **pgvector backend** with hybrid-search quality parity — dense (pgvector HNSW) + a lexical companion (`tsvector`/ParadeDB) + RRF (tasks T034a/T065a); (2) the **`Bus` port** binding (`jetstream` / `redis_streams` / `inprocess`) that lets the worker roles run without JetStream (task T029a); and (3) a **Profile-B entrypoint** that re-satisfies, inside the single container, the two kernel concerns the Go tier provides in Profile A — setting the RLS GUCs (`app.workspace_id`/`app.user_id`/`app.clearance`) per request and running the `guard` + tool-policy + metering wrappers (tasks T060e/T060f, with a live single-container smoke). The swap test (T060d) binds the **production** pgvector backend + in-process bus, not fixtures, and the smoke (T060f) proves the deployed shape runs cited answers with **no Qdrant and no NATS**. What remains Phase 2+ is multi-domain **hosting** (a manifest registry, per-manifest routing, a plugin loader) ([draft-plan.md](https://github.com/truongpx396/aisat-intel/blob/main/specs/draft-plan.md)) and *operating* Profile B as a production deployment — the capability is built, runnable, and CI-smoked in Phase 1 so it can never silently rot; alignment with the reference profile is preserved throughout because both profiles are the same binary behind the same ports.
+Phase 1 **ships and operates Profile A** (the reference host) as the production deployment, with exactly **one** manifest (backed by the manifest row) and **one** `DomainPlugin` (that host's tools and its `Policy`). Profile B is a **first-class supported profile that is built *and made runnable* in Phase 1** — all three build items land as Phase-1 tasks: (1) the `RetrievalService` **pgvector backend** with hybrid-search quality parity — dense (pgvector HNSW) + a lexical companion (`tsvector`/ParadeDB) + RRF (tasks T034a/T065a); (2) the **`Bus` port** binding (`jetstream` / `redis_streams` / `inprocess`) that lets the worker roles run without JetStream (task T029a); and (3) a **Profile-B entrypoint** that re-satisfies, inside the single container, the two kernel concerns a host provides in Profile A — setting the store's tenant/principal session context per request and running the `guard` + tool-policy + metering wrappers (tasks T060e/T060f, with a live single-container smoke). The swap test (T060d) binds the **production** pgvector backend + in-process bus, not fixtures, and the smoke (T060f) proves the deployed shape runs cited answers with **no Qdrant and no NATS**. What remains Phase 2+ is multi-domain **hosting** (a manifest registry, per-manifest routing, a plugin loader) ([the reference host's roadmap](https://github.com/truongpx396/aisat-intel/blob/main/specs/draft-plan.md)) and *operating* Profile B as a production deployment — the capability is built, runnable, and CI-smoked in Phase 1 so it can never silently rot; alignment with the reference profile is preserved throughout because both profiles are the same binary behind the same ports.

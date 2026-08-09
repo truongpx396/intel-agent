@@ -45,6 +45,13 @@ conformance: ## Port conformance suites — the contract host repos also run
 check-links: ## Verify every relative markdown link resolves
 	@./scripts/check-links.sh
 
+.PHONY: check-vocabulary
+check-vocabulary: ## Fail if reference-host vocabulary leaks into normative prose
+	@./scripts/check-vocabulary.sh
+
+.PHONY: check-docs
+check-docs: check-links check-vocabulary ## Both spec-integrity gates
+
 # ------------------------------- profile B ---------------------------------
 # The reason this repo exists: the runtime stands up and answers a cited query
 # with NO Qdrant, NO NATS, and NO Go kernel bound.
@@ -69,6 +76,24 @@ smoke: ## Prove a cited answer end-to-end on the standalone profile
 smoke-assert-isolation: ## Fail if a forbidden backend (Qdrant/NATS) got bound
 	@./scripts/assert-profile-b-isolation.sh
 
+# ------------------------------- profile C ---------------------------------
+# One container, one file: SQLite + no-op meter, no Postgres, no Redis, no bus.
+# WEAKER FLOOR: SQLite has no row-level security, so the visibility predicate is
+# enforced by the query rather than the engine. Single-tenant / dev only.
+# Contract: specs/001-agent-runtime/contracts/agent-runtime.md, Profile C.
+.PHONY: up-c
+up-c: ## Run the minimal single-tenant profile (SQLite, one container)
+	@echo "Profile C: SQLite floor is query-enforced, NOT engine-enforced. Single-tenant only."
+	docker compose -f deploy/compose.profile-c.yml up -d --wait
+
+.PHONY: down-c
+down-c: ## Tear down the minimal profile
+	docker compose -f deploy/compose.profile-c.yml down -v
+
+.PHONY: smoke-c
+smoke-c: ## Cited answer on the minimal profile
+	@if [ -d tests ]; then uv run pytest -m smoke --profile c -v; else echo "skip smoke-c (not built yet)"; fi
+
 # ------------------------------- build -------------------------------------
 .PHONY: build
 build: ## Build the runtime image
@@ -85,4 +110,4 @@ scan: ## Dependency audit
 
 # ------------------------------- aggregate ---------------------------------
 .PHONY: ci
-ci: lint typecheck test conformance check-links ## Local gate — mirrors GitHub Actions CI
+ci: lint typecheck test conformance check-docs ## Local gate — mirrors GitHub Actions CI
