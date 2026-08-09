@@ -41,7 +41,13 @@ Same rule as everywhere: the runtime owns the port, the host owns the transport.
 | `gate_resolved` | runtime | `{gate_id, verdict}` | on resume |
 | `degraded` | any node | `{node, reason}` | any time |
 | `error` | runtime | `{code, message}` | **terminal** |
-| `run_finished` | runtime | `{run_id, outcome, usage}` | exactly once, last |
+| `run_finished` | runtime | `{run_id, outcome, usage, answer_generated}` | exactly once, last |
+
+`degraded.reason` is a **closed vocabulary**, so a consumer can branch on it rather than parse prose: `rerank_fallback` \| `memory_unavailable` \| `rewrite_passthrough` \| `vision_failed` \| `history_compacted` \| `deadline_partial` \| `stream_unavailable`.
+
+`run_finished.outcome` is likewise closed: `ok` \| `degraded` \| `blocked` \| `clarified` \| `failed` \| `paused`.
+
+**`answer_generated: false` is the not-generated marker, and it is structural on purpose.** A run that breached its deadline after `assemble` may finish with `citations` and no answer ([agent-graph.md](./agent-graph.md#a-deadline-breach-past-assemble-degrades-it-does-not-discard-ar-015)). A consumer MUST be able to tell that from a normal answer **without reading the prose** — a sentence the model was asked to write is not a protocol, it is a hope. Same reasoning as the `vision` fallback stating the image was not examined.
 
 **Guarantees a consumer may rely on**
 
@@ -51,7 +57,8 @@ Same rule as everywhere: the runtime owns the port, the host owns the transport.
 4. `citations` never precedes the final `token` of the answer it cites.
 5. `clarification` and `error` are **terminal for the turn** — nothing meaningful follows.
 6. A paused run emits `gate_opened` and then **nothing** until resumed. It is *paused*, not finished — a consumer that treats silence as completion is wrong, and this is the single most common integration bug.
-7. `degraded` may appear at any point and **never** replaces a terminal event. A degraded run still finishes.
+7. `degraded` may appear at any point and **never** replaces a terminal event. A degraded run still finishes — with `run_finished{outcome:'degraded'}`, never `ok`.
+8. `citations` may arrive with **no** preceding `token` when `answer_generated` is `false`. A consumer that assumes citations imply an answer renders an empty bubble under a source list; this is the second most common integration bug after treating a pause as completion.
 
 **No payload carries a body.** No prompt text, no chunk text, no memory content in `debug_fragment` or telemetry — refs and hashes only, matching AR-020.
 
@@ -70,7 +77,9 @@ from intel_agent.testing import FakeAgentRuntime, scenarios
 
 graph = FakeAgentRuntime(scenarios.CITED_ANSWER)      # or REFUSAL, CLARIFICATION,
                                                        # GATE_PAUSE_RESUME, DEGRADED_RERANK,
-                                                       # DEADLINE_DEFERRAL, ERROR
+                                                       # DEADLINE_DEFERRAL, DEADLINE_PARTIAL,
+                                                       # HISTORY_COMPACTED, TRUNCATED_TOOL_RESULT,
+                                                       # CONTEXT_WINDOW_EXCEEDED, ERROR
 async for ev in graph.astream_events({"query": q, "ctx": ctx}):
     ...
 ```
@@ -88,11 +97,13 @@ A vocabulary change that breaks a host now breaks a **fixture diff** in the runt
 
 ### `StreamEventContract`
 
-The conformance suite any consumer runs. It asserts the seven guarantees above, plus:
+The conformance suite any consumer runs. It asserts the eight guarantees above, plus:
 
 - **out-of-order and interleaved arrival** is handled (a transport may batch or coalesce)
 - an **unknown future event type** is ignored, not fatal — forward compatibility is what lets the runtime add an event without a synchronized host release
+- an **unknown `degraded.reason` or `run_finished.outcome`** is handled as degraded/unfinished rather than crashing or silently mapping to `ok` — the vocabularies are closed *today*, and forward compatibility has to cover the values too, not only the event names
 - a **paused** run is not rendered as finished
+- a run with `answer_generated: false` is **not** rendered as an answered question
 - no event payload contains a body
 
 ---

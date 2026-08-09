@@ -1,6 +1,20 @@
 <!--
-SYNC IMPACT REPORT
-==================
+LOCAL SYNC IMPACT REPORT (intel-agent)
+======================================
+This repo's constitution is versioned independently; see the footer. The block
+below headed "INHERITED" is aisat-intel's report, carried over with the
+extraction and kept for provenance — it is NOT this file's version history.
+
+Version change: 1.0.0 → 1.0.1
+Bump rationale: PATCH. No obligation added, removed, or changed. Principle VII
+  restated the port surface as an inline list that had drifted three entries
+  behind contracts/agent-deps.md (missing Ingestor, Channel, IdentityBinder).
+  The list is replaced by a pointer to the authoritative table, so the
+  enumeration exists in exactly one place. Clarification only — every port was
+  already in scope under "everything the runtime needs from a host".
+
+INHERITED SYNC IMPACT REPORT (aisat-intel, provenance only)
+===========================================================
 Version change: 2.0.0 → 2.1.0
 Bump rationale: MINOR. Adds one new principle — X. Verification Before
   Completion (NON-NEGOTIABLE) — requiring evidence (commands + actual output)
@@ -289,10 +303,12 @@ This runtime is embedded by a host. The boundary is `AgentDeps` plus the securit
 contract, and nothing else.
 
 - **The port is the boundary.** Everything the runtime needs from a host MUST arrive
-  through a declared port (`RetrievalService`, `MemoryService`, `LLMGatewayClient`,
-  `ToolRegistry`, `StreamWriter`, checkpointer, `Bus`, `Meter`, `Recorder`,
-  `ApprovalStore`, `Policy`). Reaching around a port to a concrete backend — a direct
-  Qdrant client, a NATS connection, a provider SDK — is prohibited.
+  through a declared port. The **authoritative enumeration is the port table in
+  `specs/001-agent-runtime/contracts/agent-deps.md`**, and this principle deliberately
+  does not restate it — a second copy of a list is a second thing to forget to update,
+  and this one had already drifted by three entries before the rule was written down.
+  Reaching around a port to a concrete backend — a direct Qdrant client, a NATS
+  connection, a provider SDK — is prohibited.
 - **Config selects, code enforces.** An `AgentManifest` MAY name an implementation; it
   MUST NEVER *be* one. A manifest can only narrow what an agent may do within the
   principal's existing clearance — no manifest field may widen what a principal sees.
@@ -473,5 +489,9 @@ document conflicts with it, this constitution prevails.
   **there first**, then synced here in a single `chore(constitution):` commit that
   changes nothing else. A local-only edit to a shared principle is a defect.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-09 | **Last Amended**: 2026-08-09
+**Version**: 1.0.1 | **Ratified**: 2026-08-09 | **Last Amended**: 2026-08-10
 **Derived from**: AISAT Intel Constitution 2.1.0 @ `aisat-intel@369756e`
+
+> **This footer is the authoritative version of *this* file.** The upstream report
+> at the top of the document carries aisat-intel's numbering (2.x) and reading it
+> as local history is what put `v1.0.0` next to a `2.1.0` header for a release.

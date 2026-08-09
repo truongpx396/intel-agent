@@ -45,8 +45,11 @@ The complete, portable description of one agent. Everything here is data the run
 | `write_max_level` | int | upper bound on a write's access level, ≤ owner clearance |
 | `token_budget_day` | int | admission budget |
 | `max_loop_depth` | int | default 20 |
-| `run_deadline_s` | int | default 1800; **paused time excluded** |
+| `run_deadline_s` | int | default 1800; **paused time excluded**; a breach past `assemble` degrades rather than discarding |
 | `max_steps` | int | default 60 (durable form) |
+| `history_token_budget` | int | default 24000 — the only unbounded input in `AgentState` gets an explicit ceiling |
+| `history_keep_first` | int | default 2 — opening turns kept verbatim (task framing) |
+| `history_keep_last` | int | default 6 — recent turns kept verbatim (what a follow-up refers to) |
 | `hooks_enabled` | text[] | `audit` \| `langfuse` \| … |
 
 **Rules**
@@ -67,7 +70,7 @@ The complete, portable description of one agent. Everything here is data the run
 | `current_step` | int | |
 | `state` | jsonb | **checkpoint POINTER** — `{thread_id, checkpoint_ns, checkpoint_id, node, step}` |
 | `result` | jsonb | |
-| `error` | text | incl. `checkpoint_lost`, `deadline_exceeded`, `step_cap_exceeded` |
+| `error` | text | incl. `checkpoint_lost`, `deadline_exceeded`, `step_cap_exceeded`, `context_window_exceeded` |
 | `credits_cap`, `credits_spent` | int | hard per-run cap, independent of any daily budget |
 | `trace_id` | text | |
 | `started_at`, `last_heartbeat_at`, `completed_at` | timestamptz | |
@@ -111,5 +114,7 @@ The `idem_key` exists because the runtime **cannot** guarantee exactly-once emis
 3. Two concurrent runs for different tenants on one worker share no manifest-derived state.
 4. A `paused` run has `credits_spent` unchanged from the moment it paused.
 5. `agent_run.state.thread_id` locates a checkpoint whose `node` matches the last completed node.
-6. A run past `run_deadline_s` ends `deadline_exceeded` at a **node boundary**, with spend settled — mid-node termination would leave spend unreconciled.
+6. A run past `run_deadline_s` terminates at a **node boundary** with spend settled — mid-node termination would leave spend unreconciled. Before `assemble` that is `failed('deadline_exceeded')`; at or after it, the run finishes `degraded` with an answer or its sources under an explicit not-generated marker, and the exhaustion metric increments either way.
 7. Every `Recorder` entry has a `result_hash` and no body.
+8. A session exceeding `history_token_budget` compacts to `history_keep_first` + digest + `history_keep_last` and records the compaction; overflow surviving compaction ends `context_window_exceeded`, never an unclassified provider error.
+9. No `Recorder` entry, `debug` fragment, or emitted event contains a value in the credential scrubber's dynamic registry.

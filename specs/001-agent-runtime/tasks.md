@@ -21,14 +21,19 @@
 - [ ] **T001** Initialize the package skeleton: `src/intel_agent/{ports,graph,retrieval,memory,tools,gateway,bus,manifest,telemetry,channels,conformance}/__init__.py`, `tests/{unit,integration,conformance,smoke}/`.
 - [ ] **T002** [P] Wire ruff + black + mypy to the settings already in `pyproject.toml`; confirm `make lint` and `make typecheck` are green on the empty tree.
 - [ ] **T003** [P] Add `scripts/check-import-boundaries.py`: an AST scan asserting no module under `graph/` imports a concrete backend (`qdrant_client`, `nats`, `redis`, provider SDKs) and no module under `ports/` imports any implementation. Wire into `make lint`.
+- [ ] **T003a** [P] Add `scripts/check-anchors.sh` and fold it into `make check-docs`. `check-links.sh` deliberately strips the `#fragment` and asserts only that the *file* exists, which leaves the likelier rot uncovered: a heading gets reworded (`FR-028a` → `AR-015`; "one MCP server" → "a `ToolRegistry` port"), every link still resolves to a real file, and the reader silently lands at the top of a 400-line contract instead of at the section that was promised. Five such anchors were already dead when this task was written — two of them predating the change that found them — which is the argument for the gate rather than another round of manual fixes.
+- [ ] **T003b** [P] Fix the 108 pre-existing `ruff` findings in `src/intel_agent/{ports,conformance}/__init__.py` so `make ci` is green again. It is **currently red at `HEAD`**, which makes the README's "green on a specs-only checkout" claim stale and, worse, means the gate cannot distinguish a new break from the standing one.
 
 ## Stage 2: Ports and conformance (blocking — everything depends on these)
 
 > The suites land **before** any real backend. A suite written after its implementation documents the implementation; a suite written before it constrains one.
 
-- [ ] **T004** Define every `Protocol` in `src/intel_agent/ports/` per [agent-deps.md](./contracts/agent-deps.md): `RetrievalService`, `ToolRegistry`, `Policy`, `LLMGatewayClient`, `MemoryService`, `StreamWriter`, `Checkpointer`, `Bus`, `Meter`, `Recorder`, `ApprovalStore`, plus the Phase-2 `Channel` / `IdentityBinder` pair. Plus `SecurityCtx`, `AgentDeps`, `Candidate`, `ToolSpec`, `ToolResult`, `Decision`, `ChannelCapabilities`, `InboundMessage`.
+- [ ] **T004** Define every `Protocol` in `src/intel_agent/ports/` per the port table in [agent-deps.md](./contracts/agent-deps.md) — that table is authoritative and this task does not restate it. Each carries its **stability tier** as a marker. Plus the shared types: `SecurityCtx`, `AgentDeps`, `Candidate`, `ToolSpec` (incl. `max_result_bytes`), `ToolResult` (incl. `truncated`), `CompletionRequest` (incl. `max_output_tokens`), `Completion` (incl. `finish_reason`), `Decision`, `ChannelCapabilities`, `InboundMessage`.
+- [ ] **T004a** `scripts/check-port-tiers.py`: assert every `Protocol` in `ports/` declares a tier, that the tiers match the table in [agent-deps.md](./contracts/agent-deps.md), and that a signature change to a `Stable` port fails without a version bump. Wire into `make lint`.
 - [ ] **T005** [P] `RetrievalServiceContract` in `conformance/retrieval.py` — asserts pre-filter not post-filter, empty result is not an error, `doc_ids` narrows only, and that a cross-tenant row is `not_found`.
-- [ ] **T006** [P] `ToolRegistryContract` — allowlist enforced; **exactly one** audit entry per call including failures; in-process and MCP paths produce identical results and identical audit.
+- [ ] **T006** [P] `ToolRegistryContract` — allowlist enforced; **exactly one** audit entry per call including failures; in-process and MCP paths produce identical results and identical audit; `max_result_bytes` clips with `truncated: true` **and an in-band marker**, never a silently short list; a registered secret echoed by a tool comes back `[REDACTED]` in the result, the debug fragment, the event, and the audit entry.
+- [ ] **T006a** [P] `LLMGatewayClientContract` — aliases resolve with no provider key; `deadline` refuses rather than overruns; a context-length refusal is a typed, **non-retried** outcome; `finish_reason == "length"` escalates `max_output_tokens` exactly once (8192 → 4×); `count_tokens` never under-reports.
+- [ ] **T006b** [P] `MemoryServiceContract` — write-time ownership stamping; read-time re-filtering against **current** clearance; **no autonomous write** (turn text alone produces no memory — a self-extracting backend fails this and must be bound with extraction disabled).
 - [ ] **T007** [P] `PolicyContract` — purity (same input, same decision; no I/O, no clock, no randomness); fail-closed on an unknown action.
 - [ ] **T008** [P] `MeterContract` — `idem_key` honored; **zero** spend on refused, paused, and rejected runs.
 - [ ] **T009** [P] `ApprovalContract` — zero spend while pending; first decision wins; reject mutates nothing; decision is never derived from model output.
@@ -49,7 +54,10 @@
 - [ ] **T018** Test: node isolation — every node runs green with fake `AgentDeps` and no infra.
 - [ ] **T019** Test: state immutability — no node other than `route` writes `intent`/`model_alias`; a run's `intent` is identical at `route` and at `generate`.
 - [ ] **T020** Test: domain-agnostic `ctx` — AST scan proves no node dereferences `ctx["claims"]`; and the graph runs green end-to-end on a `claims` bag holding an opaque test-only key.
-- [ ] **T021** Test: stable instruction prefix — the static prompt prefix is byte-identical across turns of a durable run; clearance-filtered memory and context are appended **after** it and re-evaluated every turn.
+- [ ] **T021** Test: stable instruction prefix on **both** axes — (a) byte-identical across turns of a durable run, and (b) byte-identical **across two different principals on the same manifest** and across two wall-clock times. (b) is the one that catches the real cache-buster: a prefix embedding `principal`, `trace_id`, `stream_id`, or `datetime.now()` passes (a) perfectly while sharing no cache across runs. The prefix is keyed by `(manifest version, agent_role, allowed_tools)` and nothing else. Clearance-filtered memory, context, and `history_digest` are appended **after** it and re-evaluated every turn.
+- [ ] **T021a** Test: **untrusted framing is exhaustive** — an injection sentinel planted separately in a retrieved chunk, an `attachment_text`, a `web_results` entry, a **memory**, and a `history_digest` reaches `generate` inside the delimiters in every case, and in no case causes a tool call, an allowlist change, or a citation outside `context`. The memory case asserts the cross-session shape: a sentinel written on turn 1 is still framed as data on turn 5, four turns after `guard` last saw it.
+- [ ] **T021b** Implement the **entrypoint context compactor** — keep-first/keep-last/summarize-middle against `history_token_budget`, measured via `count_tokens`, run **once** before `guard` so `route`/`rewrite`/`generate` all observe the identical `history`. Emits `degraded{reason:'history_compacted'}`, the `compaction` debug fragment, and `agent_context_compaction_total`.
+- [ ] **T021c** Test: compaction — first/last turns survive verbatim; the digest is **cumulative** (compact twice, assert the earliest turn's facts survive rather than degrading through a summary-of-summaries); the digest lands **after** the frozen prefix so T021 still passes; `history_digest` is never written to `MemoryService`.
 - [ ] **T022** Test: streaming decoupling — `astream_events` yields tokens with **no** stream backend bound.
 - [ ] **T023** Implement `graph/state.py` (`AgentState`, `SecurityCtx`) and `graph/build.py`.
 - [ ] **T024** Implement nodes: `guard`, `route`, `rewrite`, `retrieve`, `rerank`, `assemble`, `memory`, `generate`, `suggest`.
@@ -60,17 +68,19 @@
 ## Stage 5: Reliability and failure behavior
 
 - [ ] **T028** Test: fail-closed guard — a moderation timeout blocks the query, spends zero, and never reaches `retrieve`.
-- [ ] **T029** Test: failure-injection matrix — every declared reliability policy is exercised by an **injected fault**, not merely written down: gateway `429`/timeout at each call site, retrieval unavailable, rerank unavailable, memory unavailable, a tool raising, a tool returning malformed data, empty retrieval (**not** a failure), a vision call failing past cutoff, and the checkpointer unavailable mid-run. Each asserts the specified outcome **and** that the degradation was recorded.
-- [ ] **T030** Test: budget boundaries — a run past its deadline ends `deadline_exceeded` at a node boundary with spend settled; a durable run past `max_steps` ends `step_cap_exceeded`; a gate held past the deadline still resumes cleanly.
+- [ ] **T029** Test: failure-injection matrix — every declared reliability policy is exercised by an **injected fault**, not merely written down: gateway `429`/timeout at each call site, **a gateway context-length (`413`-class) refusal at each call site** (→ `failed('context_window_exceeded')`, never an unclassified `error`, never retried), **a `finish_reason == "length"` truncation** (→ one `max_output_tokens` escalation, then surfaced), retrieval unavailable, rerank unavailable, memory unavailable, a tool raising, a tool returning malformed data, **a tool exceeding `max_result_bytes`** (→ clipped and marked, never silently dropped), empty retrieval (**not** a failure), a vision call failing past cutoff, and the checkpointer unavailable mid-run. Each asserts the specified outcome **and** that the degradation was recorded.
+- [ ] **T030** Test: budget boundaries — a deadline breach **before `assemble`** ends `failed('deadline_exceeded')` at a node boundary with spend settled; one **at or after `assemble`** finishes `outcome='degraded'` with `degraded{reason:'deadline_partial'}` and either an answer or citations with `answer_generated: false` — **never `ok`, never nothing, never a citations-only result dressed as an answer** — with `agent_budget_exhausted_total{boundary="deadline"}` incremented in both cases; a durable run past `max_steps` ends `step_cap_exceeded`; a gate held past the deadline still resumes cleanly.
+- [ ] **T030a** Implement the deadline-degrade path: `generate` under the remaining budget past `assemble`, falling back to citations + the structural not-generated marker when the budget is already gone.
 - [ ] **T031** Test: telemetry — exactly one start and one terminal record per executed node with the full correlation set; **leak assertion** (a sentinel planted in query, chunk, and memory appears in no log or metric label); **label assertion** (no metric label carries a tenant, principal, or id); **degradation assertion** (green with no exporter bound).
 - [ ] **T032** Implement the per-node reliability policy and degradation recording.
+- [ ] **T031a** `scripts/check-node-io.py`: **generate** the node read/write table from the `graph/nodes/` signatures and diff it against the table in [agent-graph.md](./contracts/agent-graph.md); fail on drift. That table already fell three keys behind (`doc_ids`, `attachment_text`, `image_refs`) and lost a reader entirely (`web_results`) while every prose section was correct — a hand-maintained authority is one that will drift again. Wire into `make lint`.
 
 ## Stage 6: Tools and human-in-the-loop
 
 - [ ] **T033** Test: in-process and MCP tool parity — identical result and identical audit entry for the same call.
 - [ ] **T034** Test: human gate — a run reaching a gate interrupts, spends **zero** while paused, resumes **exactly once** on approval (no settled node re-runs, no re-spend), and short-circuits on reject without mutating the subject.
 - [ ] **T035** Test: action tools — the web-search tool performs **no fetch** until its gate is approved; the note-edit tool commits only after approval **and** a permit check, is denied above clearance or outside tenant, is denied if it would raise an access level above the source floor, and refuses creation outright.
-- [ ] **T036** Implement `tools/` — the `ToolRegistry` port with `inprocess` and `mcp_client` bindings, sharing one policy wrapper.
+- [ ] **T036** Implement `tools/` — the `ToolRegistry` port with `inprocess` and `mcp_client` bindings, sharing one policy wrapper. The wrapper enforces `max_result_bytes` (256 KB Categories A/B, 64 KB per `web_search` result) and runs the **credential scrubber** — static patterns plus a dynamic registry of the deployment's bound secrets — before any result reaches a prompt, a debug fragment, an event, or an audit entry. Always on, no config flag.
 - [ ] **T037** Implement the read-only tool tier.
 - [ ] **T038** Implement the `human_gate` node and the resume path.
 - [ ] **T039** Implement the two HITL-gated action tools.
@@ -80,8 +90,8 @@
 - [ ] **T040** [P] Implement `retrieval/pgvector.py` — dense HNSW + a lexical companion + RRF. **Retrieval-quality parity is the work here**, not the authz floor. Must pass `RetrievalServiceContract` and `AccessFloorContract`.
 - [ ] **T041** [P] Implement `retrieval/qdrant.py` — hybrid + payload pre-filter. Same two suites.
 - [ ] **T042** [P] Implement `bus/` — `inprocess`, `redis_streams`, `jetstream` adapters, one suite.
-- [ ] **T043** [P] Implement `gateway/` — the OpenAI-wire client with alias resolution, deadline propagation, and one-hop fallback.
-- [ ] **T044** [P] Implement `memory/` — Mem0 backend plus a no-op, with write-time stamping and **read-time re-filtering against current clearance**.
+- [ ] **T043** [P] Implement `gateway/` — the OpenAI-wire client with alias resolution, deadline propagation, one-hop fallback, `count_tokens`, `max_output_tokens` defaulting to 8192 with a single 4× escalation on `finish_reason == "length"`, and a **typed, non-retried** context-length refusal. Must pass `LLMGatewayClientContract`.
+- [ ] **T044** [P] Implement `memory/` — Mem0 backend plus a no-op, with write-time stamping, **read-time re-filtering against current clearance**, and **auto-extraction disabled** (a backend that persists facts from turn text on its own is making the autonomous write research §13 excludes). Recalled memories are handed to `generate` already delimited as untrusted content. Must pass `MemoryServiceContract`.
 - [ ] **T045** Implement checkpointing and resume, incl. explicit `checkpoint_lost` on a pointer whose checkpoint is gone.
 - [ ] **T046** Implement `retrieval` doc-id scoping — conjoins a document term onto the predicate; narrows only.
 - [ ] **T047** Implement the query-time vision path, treating image bytes as untrusted input.
@@ -136,9 +146,9 @@
 > Do this **early — right after Stage 4**, not late. Until `FakeAgentRuntime` exists, a host cannot build its transport, debug panel, chat UI, or billing path against anything real; and until a dev harness exists, nobody here can *watch* a run stream. These six tasks are what make the two repos independently developable, so their value is highest before either side has improvised a substitute it will have to unwind.
 
 - [ ] **T062a** Define the event vocabulary in `src/intel_agent/events.py` per [contracts/stream-events.md](./contracts/stream-events.md), with a `SCHEMA_VERSION`.
-- [ ] **T062b** `intel_agent.testing.FakeAgentRuntime` — scripted, deterministic, same call surface as `build_graph(...)`. Scenarios: `CITED_ANSWER`, `REFUSAL`, `CLARIFICATION`, `GATE_PAUSE_RESUME`, `DEGRADED_RERANK`, `DEADLINE_DEFERRAL`, `ERROR`. **Exported**, so a host never hand-rolls a second definition of the vocabulary.
+- [ ] **T062b** `intel_agent.testing.FakeAgentRuntime` — scripted, deterministic, same call surface as `build_graph(...)`. Scenarios: `CITED_ANSWER`, `REFUSAL`, `CLARIFICATION`, `GATE_PAUSE_RESUME`, `DEGRADED_RERANK`, `DEADLINE_DEFERRAL`, `DEADLINE_PARTIAL`, `HISTORY_COMPACTED`, `TRUNCATED_TOOL_RESULT`, `CONTEXT_WINDOW_EXCEEDED`, `ERROR`. **Exported**, so a host never hand-rolls a second definition of the vocabulary.
 - [ ] **T062c** `intel_agent.testing.golden/` — JSONL fixture per scenario. Assert the **real** graph (against `FakeGateway`) reproduces each, modulo nondeterministic ids. This is the check that keeps the double honest.
-- [ ] **T062d** `StreamEventContract` — the seven ordering guarantees, out-of-order/interleaved arrival, forward compatibility with an unknown future event, **pause is not completion**, and no body in any payload.
+- [ ] **T062d** `StreamEventContract` — the eight ordering guarantees, out-of-order/interleaved arrival, forward compatibility with an unknown future event **and an unknown `degraded.reason` / `run_finished.outcome` value**, **pause is not completion**, **`answer_generated: false` is not an answered question**, and no body in any payload.
 - [ ] **T062e** `make dev` — a streaming CLI REPL. The default development loop: fast, scriptable, diffable, CI-friendly.
 - [ ] **T062f** `make dev-ui` — the built-in chat UI: one self-contained page over SSE. **This is a product surface now** (AR-033), so WCAG 2.1 AA applies — keyboard navigation, focus management, screen-reader labels. Still deliberately minimal and still a *reference consumer*: Renders **only** from the published vocabulary and calls no bespoke endpoint; run against every golden fixture in CI. If it ever needs a special case, the vocabulary is missing something — fix the vocabulary, not the page.
 
@@ -194,11 +204,17 @@ Each row maps a local task to the upstream ID it replaces. Those IDs are **retir
 | Local | Retires (aisat-intel) | Note |
 |---|---|---|
 | T004 | — | new: ports were implicit across three contracts, now one surface |
-| T005–T012 | T149 (approval conformance) | broadened from one port to all eleven core ports (Channel + IdentityBinder are Phase 2, T065) |
+| T004a | — | **new** — port-tier check; tiers introduced so Phase-2 ports are not frozen before an adapter argues with them |
+| T005–T012 | T149 (approval conformance) | broadened from one port to every port on the read/run path (Channel + IdentityBinder are Phase 2, T065) |
+| T006a, T006b | — | **new** — gateway and memory had ports but no suites; the memory suite carries the no-autonomous-write rule |
 | T013–T016 | T060c | manifest determinism + second-domain seam |
 | T017 | T113 (partial) | only `agent_policies` + `agent_run`; upstream keeps the kernel tables |
 | T018–T027 | T073, T073a–T073d, T060b | graph, ToolRegistry port, clarify, telemetry, budgets |
+| T021a | — | **new** — untrusted framing was specified for retrieved content only; memory and the history digest were uncovered |
+| T021b, T021c | — | **new** — `history` was the one unbounded input; upstream bounded it in a chat-session layer that stayed there |
 | T028–T032 | T060i | failure matrix, budgets, telemetry assertions |
+| T030a | — | **new** — deadline degrade past `assemble`, so a breach one node short of an answer does not discard four settled gateway calls |
+| T031a | — | **new** — generate the node I/O table; the hand-maintained one had already drifted four keys |
 | T033–T039 | T028(mcp bootstrap), T070–T072a, T120a, T120b | tools + HITL + action tools |
 | T040 | T034a, T065a, T065b | pgvector backend + doc-id scoping |
 | T041 | T065a (qdrant half) | |

@@ -63,7 +63,8 @@ memory:        { kind: mem0 }                  # or { kind: none } — memory de
 bus:           { kind: jetstream }             # kind: redis_streams | inprocess for the self-contained profile
 mcp_servers:   []                              # external MCP tool sources to mount
 channels:      [web_sse]                       # transport adapters to attach
-budgets:       { token_budget_day: <int>, max_loop_depth: 20, credits_cap: <int> }
+budgets:       { token_budget_day: <int>, max_loop_depth: 20, credits_cap: <int>,
+                 history_token_budget: 24000, history_keep_first: 2, history_keep_last: 6 }
 policy:        single_axis                     # ← SELECTS a Policy impl; is NOT the policy
 can_write:     false
 write_ops:     [note_update]

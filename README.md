@@ -10,8 +10,12 @@ Extracted from [aisat-intel](https://github.com/truongpx396/aisat-intel) at `369
 the reference **embedding host**.
 
 > **Status: spec-first.** Contracts, spec, and task breakdown are complete and carry their original
-> commit history. Implementation has not started; `make ci` is green on a specs-only checkout and
-> lights up per gate as code lands.
+> commit history. Implementation has not started, and the gates light up per stage as code lands.
+>
+> `make check-docs` (link + vocabulary integrity) is **green**. `make ci` is **red**: the first
+> `ports/` and `conformance/` stubs landed with 108 `ruff` findings (T003b). Saying so here beats
+> the alternative — a status line claiming green is how a standing failure stops being noticed,
+> and a gate that is always red cannot tell you a *new* break from the old one.
 
 ## Batteries included, batteries replaceable
 
@@ -73,6 +77,10 @@ START → guard → route → rewrite → retrieve → rerank → assemble → m
 
 The durable form adds a tenth node, `human_gate` — the canonical LangGraph `interrupt()` / `Command(resume=…)` pattern, pausing a run before an index-mutating or outward-reaching step and settling **zero spend** while paused. Every node is a pure `(state, config)` function with its own retry/timeout/degrade policy, so a reranker outage degrades to RRF order and a memory outage degrades to no injected memory — neither fails the run.
 
+Every input to the prompt is bounded: `context` by a token trim, tool results by a declared `max_result_bytes`, and the conversation itself by a **context budget** — opening and recent turns verbatim, the middle folded into one cumulative summary, compacted once at the entrypoint so every node sees the same history. A run that breaches its wall-clock deadline *after* the context is assembled degrades to an answer under the remaining budget rather than discarding four settled model calls; one that breaches before it fails cleanly. Nothing degrades silently — `outcome` is `degraded`, never `ok`.
+
+Everything reaching the prompt that the runtime did not screen **this turn** is delimited as data, never instructions: retrieved chunks, attachments, web results, image bytes, the history digest, and **recalled memories**. Memory is the one that matters most and is easiest to miss — it is the only input that is both persistent and cross-session, so a sentence that entered on turn 1 is replayed on every later turn without `guard` seeing it again. Clearance re-filtering answers *may you see this*; it does not answer *is this an instruction*, and both are required.
+
 Full node-by-node contract, the `AgentState` schema, reliability table, run-level budgets, and the Phase-2 seams (CRAG-style corrective retrieval, Self-RAG faithfulness, complexity-based model routing): [contracts/agent-graph.md](specs/001-agent-runtime/contracts/agent-graph.md).
 
 ## Tools
@@ -86,7 +94,7 @@ Ten scoped tools across four categories — one set of implementations, exposed 
 | C — Utility | `get_current_datetime`, the shared `web_distill` fetch | `web_distill` is SSRF-guarded: `https`-only, DNS-rebinding-safe, no redirects |
 | D — Agent actions | `web_search`, `edit_note` | HITL-gated (per-call approval before it runs/commits), access-bounded (`min(agent, owner)` clearance), durable-form only |
 
-A tool not in the caller's `allowed_tools` is rejected before execution — the defense against a compromised or injected run escalating its own privileges. Full catalog, arguments, and enforcement rules: [contracts/mcp-tools.md](specs/001-agent-runtime/contracts/mcp-tools.md).
+A tool not in the caller's `allowed_tools` is rejected before execution — the defense against a compromised or injected run escalating its own privileges. Every tool declares a result cap and a clipped result is **marked truncated**, never silently shortened; every result is scrubbed of credential-shaped values — including the deployment's own bound secrets — before it reaches a prompt, the debug panel, or the audit log, because tool output never passes the model-call path where PII scrubbing happens. Full catalog, arguments, and enforcement rules: [contracts/mcp-tools.md](specs/001-agent-runtime/contracts/mcp-tools.md).
 
 ## Two deployment profiles, one binary
 
@@ -199,9 +207,15 @@ class TestHostRetrieval(RetrievalServiceContract):
 ```
 
 `intel_agent.conformance` is **public API** and is versioned as such. A change to a port protocol or
-to [`host-integration.md`](specs/001-agent-runtime/contracts/host-integration.md) is a breaking
-change for every host: it bumps at least the minor version and lands *before* the host PR that
-consumes it.
+to [`host-integration.md`](specs/001-agent-runtime/contracts/host-integration.md) lands *before* the
+host PR that consumes it — never in the same merge window.
+
+Ports carry a **stability tier**, because not all of them have the same evidence behind them. The
+read path is `Stable` (breaking change ⇒ major bump); `Ingestor`, `Bus`, and `MemoryService` are
+`Beta`; `Channel` and `IdentityBinder` are `Experimental` — designed against three platform specs
+and built against none. A tier states how much a shape has been argued with, not how much care went
+into it, and it is promoted, never demoted. `SecurityCtx` and the host contract are Stable
+regardless: they are the security boundary, not a port.
 
 **What does not travel with the runtime** — and must be re-satisfied by the host: credit metering,
 the RLS GUC plumbing, and the moderation provider behind `guard`. The runtime declares *that* these
