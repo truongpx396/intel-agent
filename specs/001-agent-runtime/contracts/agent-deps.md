@@ -13,7 +13,7 @@
 
 ---
 
-## The thirteen ports
+## The fourteen ports
 
 | Port | Runtime needs it for | Degrades to | Supplied by |
 |---|---|---|---|
@@ -28,6 +28,7 @@
 | `Meter` | spend emission | no-op → **host must still meter**; see below | host |
 | `Recorder` | append-only audit of tool calls | **nothing — required**; a tool call that cannot be audited must not run | host |
 | `ApprovalStore` | human-in-the-loop gate persistence | required iff any Category-D action tool is enabled | host |
+| `Ingestor` | getting content **into** the store so there is something to retrieve | absent → the store must be populated externally | generic runtime (**default ships**) |
 | `Channel` | reaching the runtime from a chat platform | absent → the host drives the graph directly | generic runtime (adapters) |
 | `IdentityBinder` | platform identity → `SecurityCtx` | **nothing — required iff a `Channel` is attached** | host |
 
@@ -145,6 +146,22 @@ class ApprovalStore(Protocol):
 
 These three are **emission points, not authorities**. The runtime emits a spend event; it never writes a ledger. It records an audit entry; it never owns the chain head. It opens a gate; it never decides the outcome. See [host-integration.md](./host-integration.md).
 
+### `Ingestor` — the corpus seam
+
+```python
+class Ingestor(Protocol):
+    async def ingest(
+        self, source: IngestSource, ctx: SecurityCtx, *, tags: dict | None = None
+    ) -> IngestResult: ...
+```
+
+- **MUST stamp `tenant` and `principal`** on every item from `ctx`. Content whose ownership cannot be established is **rejected**, never ingested as unowned — an unowned row satisfies no visibility predicate cleanly, and "invisible to most queries" is not the same as "protected".
+- **MUST treat the source as untrusted** for the whole path. A document is data at ingest time exactly as it is at retrieval time; parsing it must never execute it.
+- **Idempotent by content hash** — re-ingesting a source updates rather than duplicates, or a re-run silently doubles a document's weight in every future retrieval.
+- A **default implementation ships here** (files, URLs, raw text) so the product runs alone. A host with its own pipeline binds that instead; the default is not privileged and passes the same `IngestorContract`.
+
+> This is the port that turns the runtime into a product. Without it a standalone deployment can *answer* over a corpus but cannot *build* one — precisely the difference between a library and something you can install and use.
+
 ### `Channel` and `IdentityBinder` — the chat-platform seam
 
 ```python
@@ -200,6 +217,7 @@ Every port ships a suite in `intel_agent.conformance`, importable by host repos:
 | `PolicyContract` | purity (same input → same decision, no I/O); fail-closed on unknown action |
 | `MeterContract` | idempotency key honored; no spend on a refused/paused run |
 | `ApprovalContract` | zero spend while pending; first decision wins; reject never mutates the subject |
+| `IngestorContract` | ownership stamped from `ctx`; unowned content rejected; idempotent by content hash; source treated as untrusted |
 | `ChannelContract` | declared capabilities are honest; unknown identity refuses; deadline clamping defers rather than truncates; chunking is lossless; no cross-adapter SDK leak |
 | `AccessFloorContract` | **profile-invariant** — a cross-tenant / above-clearance row is `not_found` under both the RLS+vector-filter and RLS-only lowerings |
 

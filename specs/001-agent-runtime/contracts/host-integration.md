@@ -8,7 +8,17 @@
 
 **Port surface**: [agent-deps.md](./agent-deps.md) | **Composition**: [agent-runtime.md](./agent-runtime.md) | **Graph internals**: [agent-graph.md](./agent-graph.md) | **Status**: **normative for hosts**. A host that satisfies every MUST here can embed the runtime without forking it. A host that skips one has not integrated the runtime — it has forked the guarantees.
 
-The runtime declares **that** these things happen. It never implements **how** your system bills, authenticates, or moderates. That asymmetry is deliberate: those are exactly the concerns where a generic implementation would be wrong for every real host.
+The runtime declares **that** these things happen. For each, it also **ships a minimal default** so the product runs standalone — but a default is a starting point, not an answer: it is deliberately not competitive with what a real host already has.
+
+| Obligation | Standalone default | Embedded — you MUST override |
+|---|---|---|
+| H1 identity | single-user / explicit user list | your auth system |
+| H2 access floor | the store's own predicate (Profile B RLS, Profile C query) | your tenant middleware |
+| H3 metering | no-op — **nobody is counting** | your ledger |
+| H4 moderation | fail-closed stub — **blocks nothing by default** | your provider |
+| H5 gates | local approval store | your approval surface |
+
+**Read the H3 and H4 defaults twice.** "No-op meter" means an unmetered agent, and "fail-closed stub" means moderation only if you bind a provider. Both are correct for a personal deployment and both are wrong for anything with users or a budget. Shipping them silently would be the dishonest move; naming them here is the point.
 
 ---
 
@@ -75,7 +85,8 @@ If no action tool is enabled, bind `approvals: None`. Do not bind a stub that au
 | Reference `RetrievalService` backends | The moderation provider |
 | Prompt assets, evals, node telemetry | Transport (HTTP/SSE/WebSocket), UI |
 | Chat-channel **protocol plumbing** (Discord/Slack/WeChat adapters) | The `IdentityBinder` — who a platform user *is* |
-| Run budgets, reliability policy | Ingestion, indexing, document lifecycle |
+| Run budgets, reliability policy | A **full** ingestion pipeline (conversion, OCR, crawling, sandboxed parsing) |
+| A **minimal** `Ingestor` default (files, URLs, text) | Document lifecycle, retention, versioning |
 
 ---
 

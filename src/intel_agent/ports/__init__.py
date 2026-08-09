@@ -22,6 +22,9 @@ __all__ = [
     "Channel",
     "ChannelCapabilities",
     "IdentityBinder",
+    "IngestResult",
+    "IngestSource",
+    "Ingestor",
     "InboundMessage",
     "LLMGatewayClient",
     "Meter",
@@ -217,6 +220,47 @@ class ApprovalStore(Protocol):
 
     async def await_decision(self, gate_id: str) -> dict[str, Any]:
         """Block until a HUMAN decision exists. Never derived from model or tool output."""
+        ...
+
+
+class IngestSource(TypedDict):
+    """Something to ingest: a file path, a URL, or raw text."""
+
+    kind: str  # "file" | "url" | "text"
+    ref: str
+    mime: str | None
+
+
+class IngestResult(TypedDict):
+    doc_id: str
+    chunks: int
+    content_hash: str
+    skipped: bool  # True when an identical content_hash was already present
+
+
+@runtime_checkable
+class Ingestor(Protocol):
+    """Get content INTO the store, so there is something to retrieve.
+
+    This is the port that makes the runtime a product rather than a library: a
+    deployment without it can answer over a corpus but cannot build one.
+
+    A default implementation ships with the runtime (files, URLs, raw text). It is
+    not privileged -- a host with its own pipeline binds that instead, and both
+    pass IngestorContract.
+    """
+
+    async def ingest(
+        self, source: IngestSource, ctx: SecurityCtx, *, tags: dict[str, Any] | None = None
+    ) -> IngestResult:
+        """Ingest one source.
+
+        MUST stamp tenant and principal from ``ctx``; content whose ownership cannot
+        be established is REJECTED, never stored unowned. MUST treat the source as
+        untrusted -- parsing a document must never execute it. MUST be idempotent by
+        content hash, or a re-run silently doubles that document's weight in every
+        future retrieval.
+        """
         ...
 
 

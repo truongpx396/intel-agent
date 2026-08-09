@@ -67,9 +67,11 @@ Changed for a single-runtime (Python 3.12) repo:
   - VII. Backend for Frontend -> NOT APPLICABLE (no Go BFF, no SPA here).
     Replaced by VII. Host Boundary Discipline, which governs what this repo
     actually owns: the AgentDeps port surface and the host contract.
-  - VIII. User Experience Consistency -> NARROWED to the machine-facing
-    surface (canonical error schema, canonical formats). The WCAG and
-    design-system clauses are the parent product's; nothing here renders UI.
+  - VIII. User Experience Consistency -> RESTORED in part. This repo is a
+    standalone product with its own CLI and minimal web UI, so the
+    accessibility and consistency clauses apply to those surfaces. What stays
+    out of scope is a design system: the built-in UI is deliberately minimal
+    and renders only from the published event vocabulary.
   - Technology & Quality Constraints -> Python-only toolchain; Go/React
     tooling and the kernel/product depguard rule dropped.
   - Development Workflow -> CI gate ordering drops the frontend/bundle
@@ -78,11 +80,17 @@ Changed for a single-runtime (Python 3.12) repo:
 
 # Intel Agent Constitution
 
-> **Scope.** This repo is the self-contained agent runtime extracted from
-> [aisat-intel](https://github.com/truongpx396/aisat-intel) at `369756e`. It owns the
-> agent graph, the `AgentManifest`/`DomainPlugin` composition, and the `AgentDeps` port
-> surface. It does **not** own auth, credit accounting, ingestion, or any UI — those are
-> host concerns re-satisfied per `contracts/host-integration.md`.
+> **Scope.** A **standalone AI agent product** that a host can also embed, extracted from
+> [aisat-intel](https://github.com/truongpx396/aisat-intel) at `369756e`. It owns the agent
+> graph, the `AgentManifest`/`DomainPlugin` composition, and the `AgentDeps` port surface —
+> and ships a **minimal default** for ingestion, identity, metering, and a chat interface so
+> the product runs alone.
+>
+> **A default is never privileged code.** It is one implementation of a declared port, held
+> to the same conformance suite an override must pass. That rule is what keeps "standalone"
+> from becoming "monolith with seams painted on", and it is why multi-tenant billing, org
+> management, and the sandbox tier remain host concerns
+> (`contracts/host-integration.md`).
 
 ## Core Principles
 
@@ -328,8 +336,11 @@ enforced on the wire format rather than on visual language.
 - Error states MUST be actionable and machine-distinguishable — a caller must be able
   to tell "refused", "degraded", and "failed" apart without parsing prose.
 
-> The parent constitution's WCAG 2.1 AA and design-system clauses are intentionally
-> absent: nothing in this repo renders UI. They remain binding in aisat-intel.
+> **Applies to the built-in surfaces.** This repo ships a CLI and a minimal web UI, so
+> WCAG 2.1 AA applies to the latter: keyboard navigation, focus management, and
+> screen-reader labels. What does *not* apply is a design system — the built-in UI is
+> deliberately minimal, renders only from the published event vocabulary, and must not
+> grow into a second product surface competing with an embedding host's front end.
 
 **Rationale**: A host integrates against shapes, not screens. Stable, uniformly named
 shapes are what make the swap matrix in `contracts/agent-runtime.md` a config change

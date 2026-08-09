@@ -1,7 +1,7 @@
 [project]
 name = "intel-agent"
 version = "0.1.0"
-description = "Self-contained, domain-adaptable LangGraph agent runtime — manifest + domain-plugin composition over a swappable set of backing services."
+description = "Standalone, domain-adaptable AI agent that a host can also embed — manifest + domain-plugin composition over a swappable set of ports, with minimal defaults for ingestion, identity, and a chat interface."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
@@ -56,6 +56,8 @@ profile-a = ["intel-agent[qdrant,jetstream,redis,memory,mcp,observability]"]
 profile-b = ["intel-agent[pgvector,redis,memory,mcp,observability]"]
 # One container, one file. Weaker access floor -- single-tenant / dev only.
 profile-c = ["intel-agent[sqlite,mcp]"]
+# Everything needed to run it as a product out of the box.
+standalone = ["intel-agent[pgvector,redis,memory,mcp,observability]"]
 
 [dependency-groups]
 dev = [

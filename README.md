@@ -1,16 +1,34 @@
 # intel-agent
 
-A **self-contained, domain-adaptable agent runtime**. One LangGraph `StateGraph`, run as a
-config-first agent that adapts to a new domain by swapping a **manifest** (config) plus a thin
-**domain plugin** (code), on a swappable set of backing services — without forking the graph.
+A **standalone AI agent** that a host can also embed. Ingest a corpus, ask questions, get cited
+answers — running by itself on one container, or wired into a larger product through declared ports.
 
-Extracted from [aisat-intel](https://github.com/truongpx396/aisat-intel) at `369756e`, where it
-is specified as **Profile B** of
-[`contracts/agent-runtime.md`](specs/001-agent-runtime/contracts/agent-runtime.md).
+One LangGraph `StateGraph`, adapted to a new domain by swapping a **manifest** (config) plus a thin
+**domain plugin** (code) — never by forking the graph.
 
-> **Status: spec-first.** The contracts, spec, and task breakdown are complete and carry their
-> original commit history. Implementation has not started. `make ci` is green on a specs-only
-> checkout and lights up per gate as code lands.
+Extracted from [aisat-intel](https://github.com/truongpx396/aisat-intel) at `369756e`, which remains
+the reference **embedding host**.
+
+> **Status: spec-first.** Contracts, spec, and task breakdown are complete and carry their original
+> commit history. Implementation has not started; `make ci` is green on a specs-only checkout and
+> lights up per gate as code lands.
+
+## Batteries included, batteries replaceable
+
+| Capability | Standalone (ships here) | Embedded (host overrides) |
+|---|---|---|
+| Corpus | built-in `Ingestor` — files, URLs, text | the host's pipeline |
+| Identity | built-in `IdentityBinder` — single-user or user list | the host's auth |
+| Interface | built-in chat UI + CLI | the host's front end |
+| Metering | no-op `Meter` — **nobody is counting** | the host's ledger |
+| Store | SQLite (Profile C) or Postgres (Profile B) | whatever the host runs |
+
+**A default is never privileged code.** It is one implementation of a declared port, held to the same
+conformance suite an override must pass. That rule is what keeps "standalone" from quietly becoming
+"monolith with seams painted on".
+
+Not a multi-tenant SaaS: the identity and metering defaults are deliberately minimal. A deployment
+needing real billing or org management embeds the runtime in a host that provides them.
 
 ---
 

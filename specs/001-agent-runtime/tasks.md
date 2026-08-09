@@ -118,6 +118,16 @@
 - [ ] **T060** Retrieval-quality eval — recall and MRR thresholds, run against **both** retrieval backends so a backend swap cannot quietly regress quality.
 - [ ] **T061** Implement the **incident→regression loop**: a `evals/regressions/` directory where every observed agent-behavior defect is added as a permanent case, reproduced from its recorded trace, **before** its fix counts as complete.
 
+## Stage 9a: Standalone product defaults
+
+> These are what make the repo a **product** rather than a library. Each is a *default implementation of a declared port* — never privileged code — and each is held to the same conformance suite an override must pass (AR-034).
+
+- [ ] **T057e** Define the `Ingestor` port + `IngestorContract` per [contracts/agent-deps.md](./contracts/agent-deps.md): ownership stamped from `ctx`, unowned content **rejected**, idempotent by content hash, source treated as untrusted.
+- [ ] **T057f** Default `Ingestor`: files, URLs, raw text → chunk → embed → store. Deliberately minimal; the reference host keeps its full pipeline and binds that instead.
+- [ ] **T057g** Default `IdentityBinder`: single-user and explicit-user-list modes, **failing closed** on an unrecognized principal. Never a default that authenticates nobody and authorizes everybody.
+- [ ] **T057h** `intel-agent ingest <path|url>` CLI plus an ingest view in the built-in UI, so a corpus can be built without writing code.
+- [ ] **T057i** **Default-swap test**: replace each default (ingestor, identity, meter, UI) with a second implementation of the same port; the conformance suite passes and **no graph node changes**. This is the test that keeps a default from quietly becoming privileged.
+
 ## Stage 10a: Test doubles and dev harness (unblocks BOTH repos)
 
 > Do this **early — right after Stage 4**, not late. Until `FakeAgentRuntime` exists, a host cannot build its transport, debug panel, chat UI, or billing path against anything real; and until a dev harness exists, nobody here can *watch* a run stream. These six tasks are what make the two repos independently developable, so their value is highest before either side has improvised a substitute it will have to unwind.
@@ -127,7 +137,7 @@
 - [ ] **T062c** `intel_agent.testing.golden/` — JSONL fixture per scenario. Assert the **real** graph (against `FakeGateway`) reproduces each, modulo nondeterministic ids. This is the check that keeps the double honest.
 - [ ] **T062d** `StreamEventContract` — the seven ordering guarantees, out-of-order/interleaved arrival, forward compatibility with an unknown future event, **pause is not completion**, and no body in any payload.
 - [ ] **T062e** `make dev` — a streaming CLI REPL. The default development loop: fast, scriptable, diffable, CI-friendly.
-- [ ] **T062f** `make dev-ui` — one self-contained HTML page over SSE, **dev-only, never packaged**. Renders **only** from the published vocabulary and calls no bespoke endpoint; run against every golden fixture in CI. If it ever needs a special case, the vocabulary is missing something — fix the vocabulary, not the page.
+- [ ] **T062f** `make dev-ui` — the built-in chat UI: one self-contained page over SSE. **This is a product surface now** (AR-033), so WCAG 2.1 AA applies — keyboard navigation, focus management, screen-reader labels. Still deliberately minimal and still a *reference consumer*: Renders **only** from the published vocabulary and calls no bespoke endpoint; run against every golden fixture in CI. If it ever needs a special case, the vocabulary is missing something — fix the vocabulary, not the page.
 
 ## Stage 11: Chat channels (Phase 2 — port fixed now, adapters later)
 

@@ -9,11 +9,25 @@
 
 ## Overview
 
-A stateful RAG agent runtime that a host system embeds to answer natural-language questions with citations, strictly scoped to what the requester is cleared to see. It adapts to a new domain by swapping a **manifest** (config) plus a thin **domain plugin** (code) — never by forking the graph.
+A stateful RAG agent that answers natural-language questions with citations, strictly scoped to what the requester is cleared to see. It runs **standalone** or **embedded in a host**, and adapts to a new domain by swapping a **manifest** (config) plus a thin **domain plugin** (code) — never by forking the graph.
 
-**Who this is for.** The direct consumer is an *integrating engineer* wiring the runtime into a product; the indirect consumer is that product's end user. Requirements below are written from whichever of those two the requirement actually serves — a distinction the source spec did not need to make, because there the runtime and the product were the same codebase.
+**What this is.** A **standalone AI agent product** that a host can also embed. It runs end-to-end by itself — ingest a corpus, ask questions, get cited answers — and it exposes every one of those capabilities as a **port with a default implementation**, so a host that already has its own ingestion, identity, or UI overrides them instead of inheriting them.
 
-**What this is not.** Not a product. It has no UI, no auth, no billing, no ingestion pipeline. Those are host concerns, enumerated in [contracts/host-integration.md](./contracts/host-integration.md).
+**Batteries included, batteries replaceable.** That is the whole design in one line, and it is what distinguishes this repo from a library:
+
+| Capability | Standalone (default ships here) | Embedded (host overrides) |
+|---|---|---|
+| Corpus | built-in `Ingestor` — files, URLs, text | the host's existing pipeline |
+| Identity | built-in `IdentityBinder` — single-user or a small user store | the host's auth system |
+| Interface | built-in chat UI + CLI | the host's own front end |
+| Metering | no-op `Meter` | the host's credit ledger |
+| Store | SQLite (Profile C) or Postgres (Profile B) | whatever the host runs |
+
+A default is **never privileged code**. It is one implementation of a declared port, held to the same conformance suite an override must pass. This is what keeps "standalone" from quietly becoming "monolith with seams painted on."
+
+**Who this is for.** Two audiences, and requirements below are written from whichever one they serve: someone running the agent **as a product**, and an engineer **embedding the runtime** in a larger system.
+
+**What this still is not.** Not a multi-tenant SaaS. The built-in identity and metering defaults are deliberately minimal — a deployment that needs real billing, org management, or workspace isolation should embed the runtime in a host that provides those ([contracts/host-integration.md](./contracts/host-integration.md)), which is exactly what the reference host does.
 
 ---
 
@@ -51,6 +65,18 @@ An engineer stands the runtime up alone — one container, one Postgres, Redis, 
 1. **Given** the Profile-B compose topology, **When** `make up && make smoke` runs, **Then** a cited answer is produced.
 2. **Given** the same run, **When** isolation is asserted, **Then** no forbidden client is importable, no forbidden service is in the topology, and no `QDRANT_*`/`NATS_*` config is present.
 3. **Given** the access-correctness suite, **When** run under the RLS-only lowering, **Then** it passes **unchanged** from the two-store profile.
+
+### User Story 3a — Run it as a product, from nothing (Priority: P1)
+
+Someone with no host system installs it, points it at a folder and a model endpoint, and asks a question about their own documents.
+
+**Why P1**: This is what "standalone product" means operationally. If it takes a host to get a first answer, the claim is false.
+
+**Acceptance**:
+1. **Given** a clean install and a directory of files, **When** the built-in ingestor runs, **Then** the content is retrievable and citable with no external pipeline.
+2. **Given** that corpus, **When** a question is asked through the built-in CLI or web UI, **Then** a cited answer streams back.
+3. **Given** an unrecognized principal, **When** a question arrives, **Then** it is **refused** — the default identity binder authenticates somebody, never everybody.
+4. **Given** any default (ingestor, identity, UI, meter), **When** it is replaced by another implementation of the same port, **Then** the same conformance suite passes and no graph node changes.
 
 ### User Story 4 — Survive interruption without re-spending (Priority: P2)
 
@@ -133,6 +159,15 @@ When a question is ambiguous in a way that would materially change the answer, t
 - **AR-021**: The runtime MUST ship an evaluation seed set — prompt cases plus a golden retrieval set — used as a regression tripwire, including a hard assertion that a query never returns a document above the caller's clearance.
 - **AR-022**: The evaluation set MUST **grow from observed failures**: every agent-behavior defect MUST be added as a permanent case, reproduced from its recorded trace, before its fix is considered complete.
 
+**Standalone product capabilities** *(defaults, each behind a port)*
+
+- **AR-029**: The runtime MUST ship an `Ingestor` port with a **working default** that takes files, URLs, and raw text, and produces retrievable, citable content in the bound store. Without this, a standalone deployment can answer over a corpus but cannot build one — which is the difference between a product and a library.
+- **AR-030**: The `Ingestor` MUST stamp every ingested item with the `tenant` and `principal` that own it, so the visibility predicate has something to filter on. Content whose ownership cannot be established MUST be rejected, not ingested as public.
+- **AR-031**: Ingested content MUST be treated as **untrusted** for the entire path — the same rule as AR-002. A document is data, never instructions, at ingest time as well as at retrieval time.
+- **AR-032**: The runtime MUST ship a **default `IdentityBinder`** covering the single-user case and a small explicit user list, and it MUST fail closed on an unrecognized principal. It MUST NOT ship a default that authenticates nobody and authorizes everybody.
+- **AR-033**: The runtime MUST ship a **usable chat interface** — a CLI and a minimal web UI — that renders **only** from the published event vocabulary ([contracts/stream-events.md](./contracts/stream-events.md)) and calls no endpoint outside it. If the interface needs a special case, the vocabulary is incomplete and the vocabulary is what gets fixed.
+- **AR-034**: Every default MUST be replaceable by binding a different implementation of the same port, and MUST be held to the **same conformance suite** as any override. A default that cannot be swapped, or that is exempt from the suite, is privileged code and is prohibited.
+
 **Channels** *(Phase 2 — port fixed now)*
 
 - **AR-026**: The runtime MUST reach users over chat platforms (Discord, Slack, WeChat) through a `Channel` port that owns **protocol plumbing only**. The mapping from a platform identity to a `SecurityCtx` MUST be host-supplied, and an unrecognized user MUST be **refused** — never given an anonymous or default identity.
@@ -202,6 +237,10 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 | AR-022 | FR-030a | runtime |
 | AR-023, AR-024, AR-025 | agent-runtime.md invariants 4–6 | runtime (new: previously contract-only, now spec-level) |
 | AR-024a | — | **new** — no upstream counterpart. The reference host is multi-tenant by construction and could never have offered this shape |
+| AR-029–AR-031 | FR-001–FR-006, FR-008 (ingestion) | **product default** — a *minimal* ingestor lives here so the agent is standalone; the reference host keeps its full pipeline (conversion, captioning, crawling, sandboxing) and overrides |
+| AR-032 | FR-025–FR-027 (device identity) | **product default** — minimal single-user/user-list binder; the reference host overrides with its own auth |
+| AR-033 | FR-009, FR-021 (chat + debug surfaces) | **product default** — CLI + minimal web UI; the reference host overrides with its SPA |
+| AR-034 | — | **new** — the rule that keeps defaults from becoming privileged code |
 | AR-026, AR-027 | — | **new** — no upstream counterpart. The reference host reaches users over its own web SSE transport; chat platforms were never in its scope |
 | AR-028 | SC-001 (extended to channels) | runtime — the access floor is channel-invariant |
 | SC-A01 | SC-001 | **shared** — release blocker in both |
@@ -215,7 +254,7 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 | SC-A09 | SC-017 | runtime |
 | SC-A10, SC-A11 | agent-runtime.md contract obligations | runtime |
 
-**Deliberately left in aisat-intel** (host product surface, no counterpart here): FR-001–FR-006 and FR-008 (ingestion, tagging, indexing), FR-013–FR-020 (workspace, invites, credits, budgets), FR-022 (admin dashboard), FR-025–FR-027 (local agent registration and device PATs), FR-029 (credit purchase), FR-032–FR-039 (notifications), FR-043 (chat attachment ingestion), and SC-004, SC-006, SC-008, SC-010–SC-013, SC-016.
+**Deliberately left in aisat-intel** (host product surface; this repo ships only a minimal default where noted above): FR-013–FR-020 (workspace, invites, credits, budgets), FR-022 (admin dashboard), FR-025–FR-027 (local agent registration and device PATs), FR-029 (credit purchase), FR-032–FR-039 (notifications), FR-043 (chat attachment ingestion), and SC-004, SC-006, SC-008, SC-010–SC-013, SC-016.
 
 ---
 
@@ -230,4 +269,6 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 
 Multi-domain **hosting** — a manifest registry, per-manifest routing, a plugin loader — is Phase 2. Phase 1 builds and CI-smokes the standalone capability so it cannot silently rot, but operates exactly one manifest and one plugin.
 
-Also out of scope, permanently: transport, UI, auth, billing, ingestion, and the sandbox tier. These are the host's, by [contracts/host-integration.md](./contracts/host-integration.md).
+**Out of scope permanently**: multi-tenant billing, org/workspace management, and the sandboxed execution tier. A deployment needing those embeds the runtime in a host that provides them ([contracts/host-integration.md](./contracts/host-integration.md)).
+
+**In scope as a minimal default, not a full implementation**: ingestion, identity, and the chat interface. The defaults exist so the product runs alone; they are deliberately not competitive with a real host's versions, and each is one port implementation among several.
