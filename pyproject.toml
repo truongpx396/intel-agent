@@ -30,6 +30,15 @@ qdrant = ["qdrant-client>=1.10"]                        # Profile A: AISAT refer
 redis = ["redis>=5.0"]                                  # redis_streams + RedisSaver
 jetstream = ["nats-py>=2.7"]                            # Profile A
 
+# --- channel adapters (Phase 2; contracts/channels.md) ------------------------
+# A platform SDK is NEVER a base dependency: installing the runtime must not pull
+# a Discord client into a deployment that has no Discord. ChannelContract asserts
+# the absence (test_no_cross_adapter_sdk_leak).
+discord = ["discord.py>=2.4"]
+slack = ["slack-sdk>=3.31"]
+wechat = ["cryptography>=43.0"]   # callback AES decrypt + signature verify; no vendor SDK
+channels = ["intel-agent[discord,slack,wechat]"]
+
 # --- optional capabilities (all degrade cleanly when absent) ------------------
 memory = ["mem0ai>=0.1"]
 mcp = ["fastmcp>=2.0"]

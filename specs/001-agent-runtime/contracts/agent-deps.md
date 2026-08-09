@@ -13,7 +13,7 @@
 
 ---
 
-## The eleven ports
+## The thirteen ports
 
 | Port | Runtime needs it for | Degrades to | Supplied by |
 |---|---|---|---|
@@ -28,6 +28,8 @@
 | `Meter` | spend emission | no-op → **host must still meter**; see below | host |
 | `Recorder` | append-only audit of tool calls | **nothing — required**; a tool call that cannot be audited must not run | host |
 | `ApprovalStore` | human-in-the-loop gate persistence | required iff any Category-D action tool is enabled | host |
+| `Channel` | reaching the runtime from a chat platform | absent → the host drives the graph directly | generic runtime (adapters) |
+| `IdentityBinder` | platform identity → `SecurityCtx` | **nothing — required iff a `Channel` is attached** | host |
 
 **"Degrades to" is a contract, not a convenience.** A port whose row says *nothing — required* must fail the run loudly when absent. A port that degrades must do so observably: the run records `outcome="degraded"` with a `degrade_reason`, never silently produces a thinner answer that looks identical to a healthy one.
 
@@ -46,6 +48,8 @@ class AgentDeps(TypedDict):
     audit: Recorder
     approvals: ApprovalStore | None      # None iff no action tool is enabled
 ```
+
+> **Why `AgentDeps` has eight fields but the table lists thirteen ports.** `Checkpointer` and `Bus` are bound at **graph compilation** and worker wiring, not per run — a node never reaches for them. `Channel` and `IdentityBinder` sit **above** the graph entirely: the `ChannelRunner` uses them to *produce* a `ctx` and *consume* the event stream, so by the time `AgentDeps` exists the channel has already done its job. Keeping them out of `AgentDeps` is what makes the graph channel-blind ([channels.md](./channels.md)).
 
 ### `RetrievalService`
 
@@ -138,6 +142,25 @@ class ApprovalStore(Protocol):
 
 These three are **emission points, not authorities**. The runtime emits a spend event; it never writes a ledger. It records an audit entry; it never owns the chain head. It opens a gate; it never decides the outcome. See [host-integration.md](./host-integration.md).
 
+### `Channel` and `IdentityBinder` — the chat-platform seam
+
+```python
+class Channel(Protocol):
+    name: str
+    capabilities: ChannelCapabilities     # declared, not detected
+    def listen(self) -> AsyncIterator[InboundMessage]: ...
+    def writer(self, msg: InboundMessage) -> StreamWriter: ...
+
+class IdentityBinder(Protocol):           # HOST-supplied
+    async def bind(self, msg: InboundMessage) -> SecurityCtx | None: ...
+```
+
+The runtime owns the **protocol plumbing** (connection, events, rate limits, chunking); the host owns the **identity mapping**, because that is obligation H1 and a wrong answer there is a privilege escalation.
+
+`bind` returning `None` MUST refuse the message. It must never fall back to an anonymous or default identity — on a public channel, "unrecognized user" is the normal case.
+
+Capabilities are **data, not subclassing**, because the platforms genuinely differ: WeChat cannot stream and must answer within ~5s, while Discord and Slack stream by editing a message in place. The runtime adapts to the declaration. Full contract, including the per-platform table: [channels.md](./channels.md).
+
 `emit_spend` carries an `idem_key` because the host's ledger MUST be able to reject a double-charge on redelivery (the runtime cannot guarantee exactly-once delivery, and pretending otherwise is how double-charges happen).
 
 ---
@@ -174,6 +197,7 @@ Every port ships a suite in `intel_agent.conformance`, importable by host repos:
 | `PolicyContract` | purity (same input → same decision, no I/O); fail-closed on unknown action |
 | `MeterContract` | idempotency key honored; no spend on a refused/paused run |
 | `ApprovalContract` | zero spend while pending; first decision wins; reject never mutates the subject |
+| `ChannelContract` | declared capabilities are honest; unknown identity refuses; deadline clamping defers rather than truncates; chunking is lossless; no cross-adapter SDK leak |
 | `AccessFloorContract` | **profile-invariant** — a cross-tenant / above-clearance row is `not_found` under both the RLS+vector-filter and RLS-only lowerings |
 
 `AccessFloorContract` is the load-bearing one. It MUST pass **unchanged** under both profile wirings; if it needs profile-specific branches, the boundary is wrong, not the test.

@@ -19,6 +19,10 @@ __all__ = [
     "ApprovalStore",
     "Bus",
     "Candidate",
+    "Channel",
+    "ChannelCapabilities",
+    "IdentityBinder",
+    "InboundMessage",
     "LLMGatewayClient",
     "Meter",
     "MemoryService",
@@ -213,6 +217,70 @@ class ApprovalStore(Protocol):
 
     async def await_decision(self, gate_id: str) -> dict[str, Any]:
         """Block until a HUMAN decision exists. Never derived from model or tool output."""
+        ...
+
+
+class ChannelCapabilities(TypedDict):
+    """What a chat platform can actually do. DECLARED by the adapter, not detected.
+
+    These are data rather than subclasses because the platforms genuinely differ:
+    Discord and Slack stream by editing a message in place; WeChat cannot stream at
+    all and must answer within ~5 seconds. An adapter layer designed around Discord
+    and then "extended" to WeChat works in testing and fails on any slow query.
+    """
+
+    supports_streaming: bool
+    edit_in_place: bool
+    max_message_chars: int
+    response_deadline_s: float | None
+    supports_attachments: bool
+
+
+class InboundMessage(TypedDict):
+    """One message received from a chat platform."""
+
+    channel: str
+    platform_user: str
+    platform_scope: str
+    conversation_key: str
+    text: str
+    attachments: list[dict[str, Any]]
+    received_at: float
+    reply_deadline: float | None
+
+
+@runtime_checkable
+class Channel(Protocol):
+    """A chat-platform adapter: protocol plumbing only, no identity decisions.
+
+    Contract: specs/001-agent-runtime/contracts/channels.md
+    """
+
+    name: str
+    capabilities: ChannelCapabilities
+
+    def listen(self) -> AsyncIterator[InboundMessage]: ...
+
+    def writer(self, msg: InboundMessage) -> StreamWriter:
+        """A StreamWriter shaped for this platform (chunking, edit-in-place, limits)."""
+        ...
+
+
+@runtime_checkable
+class IdentityBinder(Protocol):
+    """HOST-supplied. Maps a platform identity to a SecurityCtx.
+
+    This is obligation H1 wearing a different hat, so it stays host-side: the
+    runtime cannot know which of your users a Discord snowflake belongs to.
+    """
+
+    async def bind(self, msg: InboundMessage) -> SecurityCtx | None:
+        """Return ``None`` for an unrecognized user -- the runtime then REFUSES.
+
+        Never fall back to an anonymous or default identity. On a public Discord
+        guild, "unrecognized user" is the normal case, and a default identity there
+        hands the corpus to whoever finds the bot.
+        """
         ...
 
 

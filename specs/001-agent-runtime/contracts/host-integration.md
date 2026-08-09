@@ -24,6 +24,12 @@ The host MUST populate `SecurityCtx` from an authenticated session or token, in 
 
 > A `ctx` a caller can influence is a privilege-escalation primitive. This is the single obligation whose violation cannot be detected from inside the runtime — the runtime cannot tell a trustworthy `tenant` from a forged one, which is exactly why stamping it is *your* job and why it is listed first.
 
+**When a chat channel is attached**, H1 takes the concrete form of an `IdentityBinder` ([channels.md](./channels.md)): a function from a platform identity (Discord snowflake, Slack `(team, user)`, WeChat OpenID) to a `SecurityCtx`.
+
+- It MUST return `None` for anyone it does not recognize, and the runtime then refuses the message.
+- It MUST NOT fall back to an anonymous or default identity. On a public Discord guild or a Slack workspace with guests, *"unrecognized user"* is the normal case, not the edge case — a default identity there hands your corpus to whoever finds the bot.
+- Bind on the **full** platform key: `(team_id, user_id)` for Slack, not `user_id`; UnionID rather than per-app OpenID if one person spans several WeChat apps.
+
 ### H2 — Enforce the access floor below the agent (NON-NEGOTIABLE)
 
 Visibility MUST be enforced at **row granularity, inside the store**, beneath the graph.
@@ -68,6 +74,7 @@ If no action tool is enabled, bind `approvals: None`. Do not bind a stub that au
 | Port protocols + conformance suites | RLS GUC plumbing / store session setup |
 | Reference `RetrievalService` backends | The moderation provider |
 | Prompt assets, evals, node telemetry | Transport (HTTP/SSE/WebSocket), UI |
+| Chat-channel **protocol plumbing** (Discord/Slack/WeChat adapters) | The `IdentityBinder` — who a platform user *is* |
 | Run budgets, reliability policy | Ingestion, indexing, document lifecycle |
 
 ---

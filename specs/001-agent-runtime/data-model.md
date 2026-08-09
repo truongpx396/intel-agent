@@ -38,7 +38,7 @@ The complete, portable description of one agent. Everything here is data the run
 | `memory` | jsonb | `{kind: mem0\|none}` — degrades cleanly |
 | `bus` | jsonb | `{kind: jetstream\|redis_streams\|inprocess}` |
 | `mcp_servers` | jsonb | external tool sources to mount |
-| `channels` | text[] | transport adapters to attach |
+| `channels` | text[] | transport adapters to attach (`web_sse`, and Phase 2: `discord`, `slack`, `wechat` — [contracts/channels.md](./contracts/channels.md)). Attaching a channel changes **how** a principal reaches the agent, never **what** they may see |
 | `policy` | text | **SELECTS** a `Policy` impl by name; is NOT a policy |
 | `can_write` | bool | default `false` |
 | `write_ops` | text[] | Phase 1: `note_update` only |

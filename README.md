@@ -74,11 +74,34 @@ specs/001-agent-runtime/
 │   ├── mcp-tools.md          # the tool catalog + allowlist dispatch
 │   ├── approval-ports.md     # human-in-the-loop gate
 │   ├── agent-deps.md         # the AgentDeps port bundle  ← the boundary
-│   └── host-integration.md   # what a host MUST provide   ← the boundary
+│   ├── host-integration.md   # what a host MUST provide   ← the boundary
+│   └── channels.md           # Discord / Slack / WeChat (port now, adapters Phase 2)
 └── diagrams/
-src/intel_agent/              # graph/ tools/ retrieval/ memory/ ports/ conformance/
+src/intel_agent/              # graph/ tools/ retrieval/ memory/ ports/ channels/ conformance/
 prompts/  evals/  migrations/  tests/  deploy/
 ```
+
+## Chat platforms
+
+Discord, Slack, and WeChat reach the runtime through the `Channel` port. The split:
+
+| We own | You own |
+|---|---|
+| Protocol plumbing — connection, events, rate limits, chunking, streaming style | `IdentityBinder`: platform user → `(tenant, principal, claims)` |
+
+Identity mapping stays yours because it *is* host obligation H1, and a wrong answer there is a privilege escalation. An unrecognized user is **refused**, never given a default identity — on a public Discord guild, unrecognized is the normal case.
+
+Capabilities are **declared data**, not subclasses, because the platforms genuinely differ:
+
+| | Discord | Slack | WeChat |
+|---|---|---|---|
+| Streaming | via message edit | via `chat.update` | **none** |
+| Reply deadline | — | — | **~5 s** |
+| Max message | 2,000 chars | ~3,000 | 2,048 bytes |
+
+WeChat is why the model is data: an adapter layer built around Discord and later "extended" to WeChat works in testing and fails on any query slower than five seconds. The runtime buffers for non-streaming channels and **defers** rather than truncating when a deadline is hit.
+
+Adapters install as extras — `intel-agent[discord]`, `intel-agent[slack,wechat]`. A platform SDK is never a base dependency. See [contracts/channels.md](specs/001-agent-runtime/contracts/channels.md).
 
 ## Integrating it into a host
 

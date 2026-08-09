@@ -34,6 +34,7 @@ import pytest
 __all__ = [
     "AccessFloorContract",
     "ApprovalContract",
+    "ChannelContract",
     "MeterContract",
     "PolicyContract",
     "RetrievalServiceContract",
@@ -153,6 +154,66 @@ class ApprovalContract(_Contract):
 
     @pytest.mark.xfail(reason=_PENDING, strict=True)
     def test_decision_is_never_derived_from_model_output(self) -> None:
+        raise NotImplementedError(_PENDING)
+
+
+class ChannelContract(_Contract):
+    """Phase 2 (T065-T070) — every Channel adapter MUST pass this.
+
+    Contract: specs/001-agent-runtime/contracts/channels.md
+
+    Bind ``binder`` alongside ``impl``: several obligations here are about the
+    adapter and the IdentityBinder INTERACTING, which is where the security-
+    relevant mistakes actually live.
+    """
+
+    binder: ClassVar[Any] = None
+
+    @pytest.mark.xfail(reason=_PENDING, strict=True)
+    def test_declared_capabilities_are_honest(self) -> None:
+        """`supports_streaming: True` must emit more than one progressive update on a
+        multi-token answer; `False` must emit exactly one message.
+
+        A capability declaration that lies is worse than one that is conservative:
+        the runtime adapts to what it is told, so a false True produces a broken
+        deployment rather than a degraded one."""
+        raise NotImplementedError(_PENDING)
+
+    @pytest.mark.xfail(reason=_PENDING, strict=True)
+    def test_unknown_identity_refuses(self) -> None:
+        """binder.bind() -> None produces NO graph invocation, no spend, no tool call.
+
+        Never an anonymous default: on a public channel, unrecognized is normal."""
+        raise NotImplementedError(_PENDING)
+
+    @pytest.mark.xfail(reason=_PENDING, strict=True)
+    def test_deadline_defers_rather_than_truncates(self) -> None:
+        """On a channel with response_deadline_s (WeChat ~5s), a slow run emits a
+        DEFERRAL. A truncated answer presented as complete is the failure mode."""
+        raise NotImplementedError(_PENDING)
+
+    @pytest.mark.xfail(reason=_PENDING, strict=True)
+    def test_chunking_is_lossless(self) -> None:
+        """An answer over max_message_chars arrives complete across messages, with no
+        fenced code block split mid-fence."""
+        raise NotImplementedError(_PENDING)
+
+    @pytest.mark.xfail(reason=_PENDING, strict=True)
+    def test_conversations_are_scope_isolated(self) -> None:
+        """Colliding raw platform ids under different platform_scope never share a
+        thread_id -- otherwise two conversations cross-wire their memory."""
+        raise NotImplementedError(_PENDING)
+
+    @pytest.mark.xfail(reason=_PENDING, strict=True)
+    def test_graph_output_is_channel_blind(self) -> None:
+        """A golden query yields byte-identical graph output across this adapter and
+        the plain web transport."""
+        raise NotImplementedError(_PENDING)
+
+    @pytest.mark.xfail(reason=_PENDING, strict=True)
+    def test_no_cross_adapter_sdk_leak(self) -> None:
+        """With only this adapter's extra installed, importing the runtime must not
+        import another platform's SDK."""
         raise NotImplementedError(_PENDING)
 
 

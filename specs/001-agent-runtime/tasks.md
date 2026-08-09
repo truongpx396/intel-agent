@@ -18,7 +18,7 @@
 
 ## Stage 1: Setup
 
-- [ ] **T001** Initialize the package skeleton: `src/intel_agent/{ports,graph,retrieval,memory,tools,gateway,bus,manifest,telemetry,conformance}/__init__.py`, `tests/{unit,integration,conformance,smoke}/`.
+- [ ] **T001** Initialize the package skeleton: `src/intel_agent/{ports,graph,retrieval,memory,tools,gateway,bus,manifest,telemetry,channels,conformance}/__init__.py`, `tests/{unit,integration,conformance,smoke}/`.
 - [ ] **T002** [P] Wire ruff + black + mypy to the settings already in `pyproject.toml`; confirm `make lint` and `make typecheck` are green on the empty tree.
 - [ ] **T003** [P] Add `scripts/check-import-boundaries.py`: an AST scan asserting no module under `graph/` imports a concrete backend (`qdrant_client`, `nats`, `redis`, provider SDKs) and no module under `ports/` imports any implementation. Wire into `make lint`.
 
@@ -26,7 +26,7 @@
 
 > The suites land **before** any real backend. A suite written after its implementation documents the implementation; a suite written before it constrains one.
 
-- [ ] **T004** Define every `Protocol` in `src/intel_agent/ports/` per [agent-deps.md](./contracts/agent-deps.md): `RetrievalService`, `ToolRegistry`, `Policy`, `LLMGatewayClient`, `MemoryService`, `StreamWriter`, `Checkpointer`, `Bus`, `Meter`, `Recorder`, `ApprovalStore`. Plus `SecurityCtx`, `AgentDeps`, `Candidate`, `ToolSpec`, `ToolResult`, `Decision`.
+- [ ] **T004** Define every `Protocol` in `src/intel_agent/ports/` per [agent-deps.md](./contracts/agent-deps.md): `RetrievalService`, `ToolRegistry`, `Policy`, `LLMGatewayClient`, `MemoryService`, `StreamWriter`, `Checkpointer`, `Bus`, `Meter`, `Recorder`, `ApprovalStore`, plus the Phase-2 `Channel` / `IdentityBinder` pair. Plus `SecurityCtx`, `AgentDeps`, `Candidate`, `ToolSpec`, `ToolResult`, `Decision`, `ChannelCapabilities`, `InboundMessage`.
 - [ ] **T005** [P] `RetrievalServiceContract` in `conformance/retrieval.py` — asserts pre-filter not post-filter, empty result is not an error, `doc_ids` narrows only, and that a cross-tenant row is `not_found`.
 - [ ] **T006** [P] `ToolRegistryContract` — allowlist enforced; **exactly one** audit entry per call including failures; in-process and MCP paths produce identical results and identical audit.
 - [ ] **T007** [P] `PolicyContract` — purity (same input, same decision; no I/O, no clock, no randomness); fail-closed on an unknown action.
@@ -111,7 +111,20 @@
 - [ ] **T060** Retrieval-quality eval — recall and MRR thresholds, run against **both** retrieval backends so a backend swap cannot quietly regress quality.
 - [ ] **T061** Implement the **incident→regression loop**: a `evals/regressions/` directory where every observed agent-behavior defect is added as a permanent case, reproduced from its recorded trace, **before** its fix counts as complete.
 
-## Stage 11: Release
+## Stage 11: Chat channels (Phase 2 — port fixed now, adapters later)
+
+> The `Channel` port, its capability model, and the `IdentityBinder` split are settled in [contracts/channels.md](./contracts/channels.md), so these are **additive**: no node changes, no boundary change.
+>
+> **Do WeChat second, not last.** It is the platform that cannot stream and must answer in ~5s. Building Discord and Slack first and bolting WeChat on at the end produces a `ChannelRunner` shaped entirely around streaming — which is the failure this capability model exists to prevent. Discord proves the happy path; WeChat proves the model.
+
+- [ ] **T065** [P] `ChannelContract` in `conformance/channels.py` — capabilities honest, unknown identity refuses, deadline defers rather than truncates, chunking lossless, scope isolation, channel-blind graph output, no SDK leak.
+- [ ] **T066** Implement `ChannelRunner` — the generic glue: `listen` → `bind` → refuse-if-`None` → build `ctx` + namespaced `thread_id` → `astream_events` → platform writer. **All capability adaptation lives here**, so adapters stay thin protocol shims.
+- [ ] **T067** [P] Discord adapter (`intel-agent[discord]`) — gateway WS, 2000-char chunking, streaming by message edit with rate-limit-aware interval, DM vs guild scope.
+- [ ] **T068** [P] WeChat Official Account adapter (`intel-agent[wechat]`) — HTTP callback, AES-decrypt + signature verify, **no streaming**, ~5s deadline with the deferral path, and the customer-service late reply inside its 48h window. Document **which account type** is targeted; capabilities differ by type and verification status.
+- [ ] **T069** [P] Slack adapter (`intel-agent[slack]`) — Socket Mode, `chat.update` streaming, `thread_ts` continuity, `(team_id, user_id)` identity key.
+- [ ] **T070** Reference `IdentityBinder` implementations for the docs: a **single-user** binder (~5 lines, the personal-agent case) and a **directory-backed** multi-tenant one. Both are examples, never defaults — the runtime ships no binder.
+
+## Stage 12: Release
 
 - [ ] **T062** Package `conformance/` as public API; verify it survives a wheel build and is importable from a clean venv.
 - [ ] **T063** Tag `v0.1.0`; verify a host can resolve it by git ref and subclass the suites.
@@ -131,7 +144,10 @@ Stage 1 ─► Stage 2 (ports+conformance) ─► Stage 3 (manifest) ─► Stag
                                               ▼
                                    Stage 8 (proofs) ─► Stage 9 (standalone)
                                               ▼
-                                   Stage 10 (evals) ─► Stage 11 (release)
+                                   Stage 10 (evals) ─► Stage 12 (release)
+
+Stage 11 (channels, Phase 2) hangs off Stage 4 + Stage 9: it needs a runnable
+graph and the standalone entrypoint, but nothing from evals or release.
 ```
 
 Stage 2 blocks everything: the suites are the specification. Stages 5–7 parallelize once the graph exists. Stage 8 needs both a real backend (T040) and the graph.
@@ -147,7 +163,7 @@ Each row maps a local task to the upstream ID it replaces. Those IDs are **retir
 | Local | Retires (aisat-intel) | Note |
 |---|---|---|
 | T004 | — | new: ports were implicit across three contracts, now one surface |
-| T005–T012 | T149 (approval conformance) | broadened from one port to all eleven |
+| T005–T012 | T149 (approval conformance) | broadened from one port to all eleven core ports (Channel + IdentityBinder are Phase 2, T065) |
 | T013–T016 | T060c | manifest determinism + second-domain seam |
 | T017 | T113 (partial) | only `agent_policies` + `agent_run`; upstream keeps the kernel tables |
 | T018–T027 | T073, T073a–T073d, T060b | graph, ToolRegistry port, clarify, telemetry, budgets |
@@ -170,6 +186,8 @@ Each row maps a local task to the upstream ID it replaces. Those IDs are **retir
 | T058–T061 | T125, T125a | eval seed + incident→regression loop |
 | T062–T064 | — | new: cross-repo release contract |
 
-**Upstream tasks that stay upstream** (host surface, no counterpart here): T069 (semantic cache — a host-side hot path), T074 (prompt assets ship here but are authored against the host's response format), T075 (query router + Redis stream adapter — transport), T077a/T077b (suggestion SSE event + UI), T101/T101b (debug-panel assembly and streaming — the runtime emits fragments, the host renders), T062a–T062d and T076a/T076b (chat sessions — host), T030 (BAML/observability bootstrap — split).
+> **Reading the numbers.** Local IDs (`T001`+) and aisat-intel IDs share a numeric space and **do overlap** — local `T069` is the Slack adapter, upstream `T069` is the semantic cache. Upstream IDs are always written `aisat-intel Txxx` outside this table; inside it, the left column is local and the middle column is upstream.
+
+**Upstream tasks that stay upstream** (host surface, no counterpart here): `aisat-intel T069` (semantic cache — a host-side hot path), `aisat-intel T074` (prompt assets ship here but are authored against the host's response format), `aisat-intel T075` (query router + Redis stream adapter — transport), `aisat-intel T077a/T077b` (suggestion SSE event + UI), `aisat-intel T101/T101b` (debug-panel assembly and streaming — the runtime emits fragments, the host renders), `aisat-intel T062a–T062d` and `T076a/T076b` (chat sessions — host), `aisat-intel T030` (BAML/observability bootstrap — split).
 
 > **T069, T074, T075, T101 are the four worth a second look at integration time.** Each is genuinely split: the runtime owns the emission and the host owns the surface, so both repos carry half a task. They are the most likely place for a gap to hide.

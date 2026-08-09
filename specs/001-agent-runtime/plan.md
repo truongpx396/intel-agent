@@ -8,7 +8,7 @@
 
 ## Summary
 
-One LangGraph `StateGraph`, compiled in two forms (interactive and durable), composed from an `AgentManifest` (config) plus a `DomainPlugin` (code), over eleven declared ports. The runtime answers cited questions under a visibility floor it lowers but does not own, and runs identically as an embedded library in a full host (Profile A) or as a single self-contained container (Profile B).
+One LangGraph `StateGraph`, compiled in two forms (interactive and durable), composed from an `AgentManifest` (config) plus a `DomainPlugin` (code), over thirteen declared ports. The runtime answers cited questions under a visibility floor it lowers but does not own, and runs identically as an embedded library in a full host (Profile A) or as a single self-contained container (Profile B).
 
 The engineering thesis: **every reuse point is a named port with a conformance test**, so exercising a second profile can never regress the reference one, and "runs somewhere else" stays a checked capability rather than a claim.
 
@@ -40,16 +40,16 @@ Constitution v1.0.0 — see [.specify/memory/constitution.md](../../.specify/mem
 |---|---|---|
 | **I. Code Quality** | ruff/black/mypy in CI; ports are `Protocol`s and `disallow_untyped_defs` is on — an untyped port is a broken published contract | PASS |
 | **II. Clean Architecture** | `ports/` holds protocols and imports no concrete backend; backends wired only at the composition root; nodes are pure functions of `(state, config)` | PASS |
-| **III. API-First / Contract-First** | Six contracts precede implementation; `agent-deps.md` and `host-integration.md` define the boundary before any node exists | PASS |
+| **III. API-First / Contract-First** | Seven contracts precede implementation; `agent-deps.md` and `host-integration.md` define the boundary before any node exists | PASS |
 | **IV. Modular Design** | A domain is a manifest + plugin. Phase-2 nodes have fixed insertion points and declared state keys | PASS |
 | **V. Testing Standards** | Unit / integration / contract / conformance tiers; 80% floor; the access-filter assertion is in the eval seed set | PASS |
 | **VI. TDD** | Contracts precede nodes; tests precede implementation, verifiable in history | PASS |
-| **VII. Host Boundary Discipline** | The eleven ports are the entire boundary; a static import scan enforces that no node reaches around one | PASS |
+| **VII. Host Boundary Discipline** | The thirteen ports are the entire boundary; a static import scan enforces that no node reaches around one | PASS |
 | **VIII. Interface Consistency** | Canonical `{code,message,details}` errors; ISO-8601 UTC; integer credits; the event taxonomy is versioned | PASS |
 | **IX. Performance** | Per-node timeouts, run-level deadline and step cap, prompt-prefix stability for cache economics | PASS |
 | **X. Verification Before Completion** | Conformance suite and Profile-B smoke are Definition-of-Done items, not optional extras | PASS |
 
-**Initial Constitution Check: PASS.** Complexity Tracking intentionally empty — the port count (eleven) is the boundary the source system already had; consolidating it into one contract reduced ambiguity rather than adding structure.
+**Initial Constitution Check: PASS.** Complexity Tracking intentionally empty — the port count (thirteen) is the boundary the source system already had; consolidating it into one contract reduced ambiguity rather than adding structure.
 
 ## Project Structure
 
@@ -65,8 +65,9 @@ specs/001-agent-runtime/
 ├── tasks.md                 # T001… with a mapping back to retired aisat-intel IDs
 ├── contracts/
 │   ├── README.md
-│   ├── agent-deps.md        # ← the boundary: eleven ports
+│   ├── agent-deps.md        # ← the boundary: thirteen ports
 │   ├── host-integration.md  # ← the boundary: five host obligations
+│   ├── channels.md          # Discord / Slack / WeChat (port now, adapters Phase 2)
 │   ├── agent-graph.md       # moved, history preserved
 │   ├── agent-runtime.md     # moved, history preserved
 │   ├── mcp-tools.md         # moved, history preserved
@@ -91,6 +92,9 @@ src/intel_agent/
 ├── bus/              # Bus: inprocess | redis_streams | jetstream
 ├── manifest/         # AgentManifest load + validation (fails CLOSED)
 ├── telemetry/        # node instrumentation wrapper
+├── channels/         # Phase 2: runner.py + discord.py | slack.py | wechat.py
+│                     #   sits ABOVE the graph, never in AgentDeps — that is what
+│                     #   keeps the graph channel-blind (contracts/channels.md)
 └── conformance/      # PUBLIC API — imported by host repos
 
 prompts/  evals/  migrations/  tests/{unit,integration,conformance,smoke}/
@@ -113,7 +117,7 @@ A is B **plus** the host kernel and heavier backing services — a superset rela
 ## Phasing
 
 - **Phase 0 — research.** Carried over; see [research.md](./research.md).
-- **Phase 1 — contracts.** Complete. Six contracts, two of them authored fresh to make the boundary explicit.
+- **Phase 1 — contracts.** Complete. Seven contracts, two of them authored fresh to make the boundary explicit.
 - **Phase 2 — ports and fakes.** Every `Protocol` plus a fake implementation and its conformance suite. TDD order: the suite exists before the real backend.
 - **Phase 3 — graph.** Nodes against fake deps, no infra.
 - **Phase 4 — backends.** pgvector and qdrant `RetrievalService`; Redis checkpointer; in-process and JetStream `Bus`.

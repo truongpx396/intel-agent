@@ -133,6 +133,12 @@ When a question is ambiguous in a way that would materially change the answer, t
 - **AR-021**: The runtime MUST ship an evaluation seed set — prompt cases plus a golden retrieval set — used as a regression tripwire, including a hard assertion that a query never returns a document above the caller's clearance.
 - **AR-022**: The evaluation set MUST **grow from observed failures**: every agent-behavior defect MUST be added as a permanent case, reproduced from its recorded trace, before its fix is considered complete.
 
+**Channels** *(Phase 2 — port fixed now)*
+
+- **AR-026**: The runtime MUST reach users over chat platforms (Discord, Slack, WeChat) through a `Channel` port that owns **protocol plumbing only**. The mapping from a platform identity to a `SecurityCtx` MUST be host-supplied, and an unrecognized user MUST be **refused** — never given an anonymous or default identity.
+- **AR-027**: A `Channel` MUST **declare** its capabilities — streaming, edit-in-place, message size, response deadline — and the runtime MUST adapt to the declaration. A channel that cannot stream receives one buffered message; a channel with a response deadline receives a **deferral** rather than a truncated answer presented as complete.
+- **AR-028**: Attaching a channel MUST NOT change what any principal can see. The access floor is channel-invariant, and graph output for a golden query MUST be byte-identical across channels.
+
 **Portability**
 
 - **AR-023**: No node may read the manifest or dereference a host-specific claim. A new domain MUST be a manifest plus a plugin, never a node edit.
@@ -194,6 +200,8 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 | AR-021 | FR-030 | runtime |
 | AR-022 | FR-030a | runtime |
 | AR-023, AR-024, AR-025 | agent-runtime.md invariants 4–6 | runtime (new: previously contract-only, now spec-level) |
+| AR-026, AR-027 | — | **new** — no upstream counterpart. AISAT reaches users over its own web SSE transport; chat platforms were never in its scope |
+| AR-028 | SC-001 (extended to channels) | runtime — the access floor is channel-invariant |
 | SC-A01 | SC-001 | **shared** — release blocker in both |
 | SC-A02 | agent-runtime.md, "access floor is profile-invariant" | runtime |
 | SC-A03 | SC-002, SC-003 | runtime |
