@@ -145,9 +145,24 @@ Run them in **your** CI, against **your** implementations. Green suites are the 
 
 ---
 
-## Versioning and breaking changes
+## Versioning, stability tiers, and breaking changes
 
-- A change to any port protocol, to `SecurityCtx`, or to this document is **breaking for every host**.
-- It bumps at least the minor version, names the affected hosts in the PR body, and lands **before** the host PR that consumes it — never in the same merge window.
+Not every port has earned the same promise. The read path has been exercised by a real deployment; the chat-channel pair has been designed against three platform specs and built against none. Treating both as equally frozen forces one of two bad outcomes — a major-version bump for the first thing the WeChat adapter teaches us, or, far more likely, a promise quietly broken. So the promise is **declared per port** ([agent-deps.md](./agent-deps.md#the-fourteen-ports) carries the tier column):
+
+| Tier | Promise | Breaking change costs | Ports today |
+|---|---|---|---|
+| **Stable** | the shape is settled; build against it | **major** version bump | `RetrievalService`, `Policy`, `LLMGatewayClient`, `ToolRegistry`, `Meter`, `Recorder`, `ApprovalStore`, `StreamWriter`, `Checkpointer` |
+| **Beta** | the shape is right; details may move | **minor** bump + a changelog entry naming the migration | `Ingestor`, `Bus`, `MemoryService` |
+| **Experimental** | shipped to be used and learned from | any release, changelog entry | `IdentityBinder`, `Channel` |
+
+Three rules, and the second is the one that makes tiers worth having rather than a way to dodge the ceremony:
+
+- **A tier is promoted, never demoted.** Promotion is a deliberate decision recorded in the changelog. A port does not slide back to Experimental because a change turned out to be inconvenient — at that point the choice is to bump the major version or not make the change.
+- **Experimental is a statement about evidence, not about care.** It means *no real implementation has argued with this shape yet*. It does not license a sloppy protocol, a missing conformance suite, or a hollow default: `Channel` and `IdentityBinder` ship a full contract, a suite, and fail-closed behavior today. What they do not ship is the confidence that survives contact with a second implementation.
+- **`SecurityCtx` and this document are Stable regardless.** They are the security boundary, not a port; a change to either is breaking for every host at every tier.
+
+Unchanged by tiering:
+
+- A change to a port protocol, to `SecurityCtx`, or to this document names the affected hosts in the PR body and lands **before** the host PR that consumes it — never in the same merge window.
 - Adding an **optional** port with a documented degradation is additive.
 - Narrowing a "degrades to" guarantee (making an optional port required) is **breaking**, even though nothing in the type signature changes.
