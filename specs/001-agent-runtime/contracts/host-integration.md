@@ -8,17 +8,19 @@
 
 **Port surface**: [agent-deps.md](./agent-deps.md) | **Composition**: [agent-runtime.md](./agent-runtime.md) | **Graph internals**: [agent-graph.md](./agent-graph.md) | **Status**: **normative for hosts**. A host that satisfies every MUST here can embed the runtime without forking it. A host that skips one has not integrated the runtime — it has forked the guarantees.
 
-The runtime declares **that** these things happen. For each, it also **ships a minimal default** so the product runs standalone — but a default is a starting point, not an answer: it is deliberately not competitive with what a real host already has.
+Every obligation below has a **working default that ships with the runtime**. Standalone, they all function: the agent authenticates, meters its own usage, moderates, gates, and enforces its access floor without a host. Overriding one is an **upgrade to your system's version**, not a rescue from a stub.
 
-| Obligation | Standalone default | Embedded — you MUST override |
+| Obligation | Default (works standalone) | Override when |
 |---|---|---|
-| H1 identity | single-user / explicit user list | your auth system |
-| H2 access floor | the store's own predicate (Profile B RLS, Profile C query) | your tenant middleware |
-| H3 metering | no-op — **nobody is counting** | your ledger |
-| H4 moderation | fail-closed stub — **blocks nothing by default** | your provider |
-| H5 gates | local approval store | your approval surface |
+| H1 identity | single-user or explicit user list, fail-closed on unknown | you have an auth system (OIDC, SSO, device tokens) |
+| H2 access floor | the store's own predicate — RLS (Profile B) or query (Profile C) | you have tenant middleware, or need a second lowering |
+| H3 metering | **real local usage ledger** — tokens, cost, per principal, idempotent | you bill, or your ledger is authoritative elsewhere |
+| H4 moderation | **real check via the gateway's moderation endpoint**, fail-closed on error | you have a provider or policy of your own |
+| H5 gates | local approval store with a resolve surface | your approvals live in your product's UI |
 
-**Read the H3 and H4 defaults twice.** "No-op meter" means an unmetered agent, and "fail-closed stub" means moderation only if you bind a provider. Both are correct for a personal deployment and both are wrong for anything with users or a budget. Shipping them silently would be the dishonest move; naming them here is the point.
+> **No hollow defaults.** A default that does nothing is worse than no default at all: it makes a broken deployment look configured. If a capability cannot be implemented usefully without host context, the runtime **refuses to start without a binding** rather than shipping a no-op that silently passes.
+>
+> This is why H3 is a real ledger and not a no-op counter, and why H4 calls a real endpoint rather than returning `allow`. An unmetered or unmoderated agent should be something you **chose**, explicitly, not something you inherited by not looking.
 
 ---
 

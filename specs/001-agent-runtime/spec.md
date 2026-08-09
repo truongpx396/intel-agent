@@ -20,7 +20,7 @@ A stateful RAG agent that answers natural-language questions with citations, str
 | Corpus | built-in `Ingestor` — files, URLs, text | the host's existing pipeline |
 | Identity | built-in `IdentityBinder` — single-user or a small user store | the host's auth system |
 | Interface | built-in chat UI + CLI | the host's own front end |
-| Metering | no-op `Meter` | the host's credit ledger |
+| Metering | real local usage ledger — tokens, cost, per principal | the host's credit ledger |
 | Store | SQLite (Profile C) or Postgres (Profile B) | whatever the host runs |
 
 A default is **never privileged code**. It is one implementation of a declared port, held to the same conformance suite an override must pass. This is what keeps "standalone" from quietly becoming "monolith with seams painted on."
@@ -167,6 +167,7 @@ When a question is ambiguous in a way that would materially change the answer, t
 - **AR-032**: The runtime MUST ship a **default `IdentityBinder`** covering the single-user case and a small explicit user list, and it MUST fail closed on an unrecognized principal. It MUST NOT ship a default that authenticates nobody and authorizes everybody.
 - **AR-033**: The runtime MUST ship a **usable chat interface** — a CLI and a minimal web UI — that renders **only** from the published event vocabulary ([contracts/stream-events.md](./contracts/stream-events.md)) and calls no endpoint outside it. If the interface needs a special case, the vocabulary is incomplete and the vocabulary is what gets fixed.
 - **AR-034**: Every default MUST be replaceable by binding a different implementation of the same port, and MUST be held to the **same conformance suite** as any override. A default that cannot be swapped, or that is exempt from the suite, is privileged code and is prohibited.
+- **AR-035** *(no hollow defaults)*: Every shipped default MUST be a **working implementation**, not a no-op. Specifically, the default `Meter` MUST keep a real usage ledger and the default moderation MUST perform a real check. Where a capability cannot function without host context, the runtime MUST **fail to start without a binding** rather than ship a no-op that silently passes — a default that does nothing makes a broken deployment look configured, which is worse than having no default at all.
 
 **Channels** *(Phase 2 — port fixed now)*
 
@@ -241,6 +242,7 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 | AR-032 | FR-025–FR-027 (device identity) | **product default** — minimal single-user/user-list binder; the reference host overrides with its own auth |
 | AR-033 | FR-009, FR-021 (chat + debug surfaces) | **product default** — CLI + minimal web UI; the reference host overrides with its SPA |
 | AR-034 | — | **new** — the rule that keeps defaults from becoming privileged code |
+| AR-035 | — | **new** — no hollow defaults; a no-op makes a broken deployment look configured |
 | AR-026, AR-027 | — | **new** — no upstream counterpart. The reference host reaches users over its own web SSE transport; chat platforms were never in its scope |
 | AR-028 | SC-001 (extended to channels) | runtime — the access floor is channel-invariant |
 | SC-A01 | SC-001 | **shared** — release blocker in both |

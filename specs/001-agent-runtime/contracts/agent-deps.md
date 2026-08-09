@@ -25,12 +25,16 @@
 | `StreamWriter` | token/event emission | no-op → run completes unstreamed | generic runtime |
 | `Checkpointer` | durable-form resume | required for durable form only; interactive needs none | generic runtime |
 | `Bus` | worker-role fan-out | `inprocess` executor (direct calls) | generic runtime |
-| `Meter` | spend emission | no-op → **host must still meter**; see below | host |
+| `Meter` | usage accounting | **default: a real local ledger** (tokens, cost, per principal, idempotent) | generic runtime (**default ships**) |
 | `Recorder` | append-only audit of tool calls | **nothing — required**; a tool call that cannot be audited must not run | host |
 | `ApprovalStore` | human-in-the-loop gate persistence | required iff any Category-D action tool is enabled | host |
 | `Ingestor` | getting content **into** the store so there is something to retrieve | absent → the store must be populated externally | generic runtime (**default ships**) |
 | `Channel` | reaching the runtime from a chat platform | absent → the host drives the graph directly | generic runtime (adapters) |
 | `IdentityBinder` | platform identity → `SecurityCtx` | **nothing — required iff a `Channel` is attached** | host |
+
+**Every port has a working default.** The runtime is a product: it ingests, retrieves, meters, moderates, gates, and answers without a host. A host overrides a port when its own implementation is better for its context — not because ours is a placeholder.
+
+> **No hollow defaults.** A default that does nothing is worse than no default, because it makes a broken deployment look configured. Where a capability genuinely cannot work without host context, the runtime **fails to start without a binding** instead of shipping a no-op that silently passes. There is no port whose default is "pretend it worked".
 
 **"Degrades to" is a contract, not a convenience.** A port whose row says *nothing — required* must fail the run loudly when absent. A port that degrades must do so observably: the run records `outcome="degraded"` with a `degrade_reason`, never silently produces a thinner answer that looks identical to a healthy one.
 
@@ -144,7 +148,13 @@ class ApprovalStore(Protocol):
     async def await_decision(self, gate: GateId) -> Decision: ...
 ```
 
-These three are **emission points, not authorities**. The runtime emits a spend event; it never writes a ledger. It records an audit entry; it never owns the chain head. It opens a gate; it never decides the outcome. See [host-integration.md](./host-integration.md).
+Each ships a **working default** and each is overridable:
+
+- **`Meter`** — the default keeps a **real local usage ledger** (tokens, cost, per principal, idempotent by `idem_key`), so a standalone agent knows what it spent. A host with its own billing binds that instead and becomes the authority; the runtime then only *emits* and never writes.
+- **`Recorder`** — the default writes a local append-only audit log. A host with a tamper-evident chain owns the chain head and the runtime is only a writer.
+- **`ApprovalStore`** — the default persists gates locally with a resolve surface. A host with its own approvals UI binds that.
+
+The pattern is the same in all three: **standalone, the runtime is the authority; embedded, it demotes itself to an emitter.** That demotion is a binding choice, never a silent one — see [host-integration.md](./host-integration.md).
 
 ### `Ingestor` — the corpus seam
 

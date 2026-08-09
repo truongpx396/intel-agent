@@ -126,6 +126,9 @@
 - [ ] **T057f** Default `Ingestor`: files, URLs, raw text → chunk → embed → store. Deliberately minimal; the reference host keeps its full pipeline and binds that instead.
 - [ ] **T057g** Default `IdentityBinder`: single-user and explicit-user-list modes, **failing closed** on an unrecognized principal. Never a default that authenticates nobody and authorizes everybody.
 - [ ] **T057h** `intel-agent ingest <path|url>` CLI plus an ingest view in the built-in UI, so a corpus can be built without writing code.
+- [ ] **T057j** Default `Meter`: a **real local usage ledger** — tokens, cost, per principal, idempotent by `idem_key`, queryable from the CLI. Not a counter that discards.
+- [ ] **T057k** Default moderation behind `guard`: a **real check** via the gateway's moderation endpoint, fail-closed on timeout or error. No stub that returns `allow`.
+- [ ] **T057l** **No-hollow-defaults test** (AR-035): assert that no shipped default is a no-op — the `Meter` default records a spend that is then readable, the moderation default actually rejects a seeded disallowed input, and the audit default produces a readable entry. A default that silently passes must fail this test.
 - [ ] **T057i** **Default-swap test**: replace each default (ingestor, identity, meter, UI) with a second implementation of the same port; the conformance suite passes and **no graph node changes**. This is the test that keeps a default from quietly becoming privileged.
 
 ## Stage 10a: Test doubles and dev harness (unblocks BOTH repos)

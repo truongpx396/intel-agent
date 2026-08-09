@@ -186,7 +186,17 @@ class Bus(Protocol):
 
 @runtime_checkable
 class Meter(Protocol):
-    """Spend EMISSION. The runtime never writes a ledger; the host does."""
+    """Usage accounting.
+
+    The DEFAULT implementation keeps a real local ledger (tokens, cost, per
+    principal, idempotent by idem_key) so a standalone agent knows what it spent.
+    There is deliberately no no-op default: a meter that counts nothing makes an
+    unmetered deployment look configured.
+
+    A host that bills binds its own; the runtime then demotes itself to an emitter
+    and the host ledger is authoritative. That demotion is a binding choice, never
+    a silent one.
+    """
 
     async def emit_spend(
         self, ctx: SecurityCtx, op: str, units: int, idem_key: str
