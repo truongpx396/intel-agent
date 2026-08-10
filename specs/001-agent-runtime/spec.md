@@ -85,9 +85,12 @@ A long-horizon run is interrupted mid-flight and resumes from its last completed
 **Acceptance**:
 1. **Given** a worker killed mid-run, **When** a new worker claims it, **Then** it resumes at the last completed node boundary and re-spends nothing already settled.
 2. **Given** a checkpoint pointer whose stored checkpoint is gone, **When** resume is attempted, **Then** the run fails explicitly as `checkpoint_lost` — never a silent restart.
-3. **Given** a run past its wall-clock deadline **before** context is assembled, **When** the next node boundary is reached, **Then** it ends `deadline_exceeded` with spend settled.
-4. **Given** a run past its deadline **after** context is assembled, **When** the next node boundary is reached, **Then** it returns an answer or its sources marked degraded — never nothing, and never presented as complete.
-5. **Given** a session whose history exceeds the context budget, **When** the next turn runs, **Then** the opening and most recent turns survive verbatim, the middle is one summary, the compaction is reported, and a cited answer still streams.
+3. **Given** a run paused at a human gate across a deploy that changed the state schema, **When** a worker claims it, **Then** it fails explicitly as `checkpoint_incompatible` rather than resuming into the new topology; **and given** a deploy that changed only the build SHA, **When** the same run is claimed, **Then** it resumes normally.
+4. **Given** a run past its wall-clock deadline **before** context is assembled, **When** the next node boundary is reached, **Then** it ends `deadline_exceeded` with spend settled.
+5. **Given** a run past its deadline **after** context is assembled, **When** the next node boundary is reached, **Then** it returns an answer or its sources marked degraded — never nothing, and never presented as complete.
+6. **Given** a run that crosses its per-run cost ceiling, **When** the next node boundary is reached, **Then** it fails `credits_exhausted` before context assembly and degrades after it — the same salvage rule as a deadline, because work already bought is bought either way.
+7. **Given** a long-horizon run repeating one identical action, **When** the repeat count reaches its limit, **Then** the run ends `no_progress` **before** the step cap fires; **and given** a run whose actions differ, **Then** the counter resets and the step cap remains its only bound.
+8. **Given** a session whose history exceeds the context budget, **When** the next turn runs, **Then** the opening and most recent turns survive verbatim, the middle is one summary, the compaction is reported, and a cited answer still streams.
 
 ### User Story 5 — Stop and ask a human before acting (Priority: P2)
 
@@ -116,7 +119,11 @@ When a question is ambiguous in a way that would materially change the answer, t
 - A tool returning more than its declared cap is clipped and **marked truncated**, never silently shortened.
 - A conversation outgrowing the context budget is compacted — opening and recent turns verbatim, the middle summarized — and the compaction is reported. Overflow that survives compaction is a **named** terminal state, not an unclassified provider error.
 - A deadline breach **before** context assembly fails the run; one **after** it degrades to an answer or to sources under an explicit not-generated marker.
-- An injection planted in a memory on an earlier turn is still framed as data on every later turn, and never triggers a tool call.
+- An injection planted in a memory on an earlier turn is still framed as data on every later turn, and never triggers a tool call — and that memory can be **deleted**, so the replay ends rather than merely being hidden from a demoted principal.
+- A memory past its retention horizon is not recalled, whether or not a sweep has removed it yet.
+- A run resumed against a build whose state schema differs from the one that wrote its checkpoint fails as `checkpoint_incompatible`; one resumed against a merely different build SHA resumes normally, the difference recorded.
+- A run crossing its per-run cost ceiling before context assembly fails as `credits_exhausted`; one crossing it after degrades to an answer or to sources under the not-generated marker, exactly as a deadline breach does.
+- A long-horizon run repeating one identical action ends as `no_progress` before its step cap fires; one whose actions differ runs to its cap or to completion.
 - Every degradation is **recorded**; none is smoothed over into a clean-looking run.
 
 ---
@@ -131,11 +138,13 @@ When a question is ambiguous in a way that would materially change the answer, t
 - **AR-002**: The runtime MUST treat all retrieved content and tool output as **untrusted data, never as instructions**, and MUST NOT let injected text trigger additional tool calls or escalate tool access.
 - **AR-003**: Every prompt input the runtime did not screen **on this turn** MUST be structurally delimited as data, so instruction text inside it cannot be read as an instruction to the model. That set is exhaustive and MUST be enumerated in the contract: retrieved chunks, attachments, web-fetch results, image bytes, any model-authored history summary, **and recalled memories**. Screening covers the current query only; everything else entered on some other turn, through some other path.
 - **AR-003a**: A recalled memory MUST be treated as untrusted content, not as the agent's own knowledge. Clearance re-filtering answers *may this principal see this*; it does not answer *is this text issuing an instruction*, and a memory is the only prompt input that is both persistent and cross-session — re-injected on every later turn without ever being re-screened. The runtime MUST NOT permit a memory backend to write memories autonomously; every write MUST be an explicit, audited call the runtime made.
+- **AR-003b**: A memory MUST be removable. The runtime MUST expose a **scoped, audited deletion** path — by memory id, by principal, and by age — and MUST enforce a declared **retention horizon at recall time**, not merely by a background sweep, so the guarantee holds between sweeps rather than after them. A deletion MUST NOT reach outside the caller's tenant and MUST report how many memories it removed; a selector it cannot honor in full MUST be refused rather than silently narrowed. Re-filtering by clearance does not satisfy this: it hides a memory from a demoted principal without ending its life, which leaves a memory identified as carrying an injection on the replay path permanently (AR-003a) and leaves the runtime unable to erase a departed principal's durable content.
 
 **Tools and actions**
 
 - **AR-004**: The runtime MUST expose read-only tools as the default tier, plus a small set of **HITL-gated action tools** that are the only agent actions permitted to reach outside the corpus or mutate stored content.
 - **AR-004a**: Every tool MUST declare a maximum result size, and a result clipped by it MUST be marked as truncated rather than silently shortened — "three results" and "the first three of three thousand" warrant different answers.
+- **AR-004b**: Every tool MUST declare its **capability** — read-only, mutating, or outward-reaching — and the runtime MUST refuse to dispatch a mutating or outward tool that is not human-gated and not in the durable form. An **undeclared** capability MUST be treated as outward-reaching. This MUST hold for tools the runtime did not author, including every entry in a **remote** tool catalog the manifest binds as a tool source: a remote server owns *authorization* over its own rows, but *oversight* — whether a human approved an irreversible action — is the runtime's obligation to the principal it acts for, and delegating it would let a configuration change remove human approval. A run MUST NOT hold private-data access, untrusted content, **and** an ungated outward reach or mutation at the same time; where a configuration would produce all three, the third MUST route through the human gate.
 - **AR-005**: The runtime MUST gate every action that mutates the index, applies a model-suggested security attribute, or reaches outside the corpus on an **explicit human approval recorded durably before the action runs and before any spend**.
 - **AR-006**: A gated action pending approval MUST consume **zero** credits and perform no side effect on its subject.
 - **AR-007**: An approval decision MUST be human-authored and MUST NEVER be derived from model, tool, or document output.
@@ -154,7 +163,10 @@ When a question is ambiguous in a way that would materially change the answer, t
 - **AR-014**: The runtime MUST persist long-horizon runs durably so they resume after interruption, support cancellation, and enforce a hard per-run cost cap independent of any daily budget.
 - **AR-015**: Every run MUST be bounded in **time and work**, not only money: a wall-clock deadline on all runs and a step cap on long-horizon runs, evaluated at a resumable boundary. **Time spent awaiting human approval MUST NOT count against the deadline.** A deadline breach that lands **after context assembly** MUST degrade — answering under the remaining budget, or returning the sources found under an explicit not-generated marker — rather than discarding work already paid for; it MUST be reported as degraded and never as a clean run.
 - **AR-015a**: Conversation context MUST be **bounded and compacted**, not left to grow until a provider refuses it. The runtime MUST enforce a declared context budget, preserve the opening and most recent turns verbatim, replace the elided middle with a single cumulative summary, and record the compaction observably. Exceeding the budget after compaction MUST be a **named terminal state**, not an unclassified error. The summary MUST NOT be written to cross-session memory — it is per-conversation state, and promoting it would be an autonomous memory write (AR-003a).
+- **AR-015b**: Every run MUST carry a **per-run cost ceiling**, on the interactive form as well as the durable one. A wall-clock deadline bounds latency and bounds spend only incidentally — how much a run can buy inside it is a property of provider throughput on the day, not of the run — and a step count is not a substitute because the same step costs differently on different model tiers. A breach MUST be evaluated at a resumable boundary and MUST degrade past context assembly under the same rule as a deadline breach, rather than discarding work already paid for.
 - **AR-016**: A lost checkpoint MUST fail the run explicitly, never restart it silently — a restart would re-spend settled credits.
+- **AR-016a**: A checkpoint MUST record the build and state-schema version that wrote it, and a resume MUST compare them before continuing. A resume under a differing **state-schema** version MUST fail explicitly rather than resume into a topology the checkpoint predates; a differing build version alone MUST be recorded and MUST NOT fail the run. Because a human gate may hold a run paused indefinitely, a deploy landing underneath a paused run is the ordinary case, and resuming a stale checkpoint fails **silently** — a renamed key arrives as a missing one, a removed node as an unschedulable name, an inserted node as a step the run never executes — which is the class of failure this requirement exists to make loud.
+- **AR-016b**: A long-horizon run MUST be bounded by **forward progress**, not only by a step cap. The runtime MUST detect consecutive steps that repeat an identical action fingerprint and MUST end such a run in a named terminal state. A step cap alone bounds how many times a run may repeat itself, not whether it is converging, so a run looping on one action exhausts its cap and settles spend indistinguishably from one that was working.
 
 **Observability and audit**
 
@@ -162,11 +174,14 @@ When a question is ambiguous in a way that would materially change the answer, t
 - **AR-018**: The runtime MUST emit operational telemetry for every step: exactly one lifecycle start and one terminal record per executed node, carrying a full correlation set, plus aggregate metrics for duration, outcome, degradation, and budget exhaustion.
 - **AR-019**: The runtime MUST emit an audit entry for every tool call — tool, role, cost, result fingerprint, trace reference — **including failures**. A tool call that cannot be audited MUST NOT run.
 - **AR-020**: The runtime MUST scrub personally identifiable information from prompts and responses before they reach trace or evaluation stores, and MUST NOT write raw bodies to telemetry. No metric label may carry a tenant, principal, or id.
+- **AR-017a**: The runtime MUST record, per model call, the **resolved concrete model** the gateway mapped the alias to — in the trace and the observable cost fragment, never as a metric label, and never readable by a graph node. Naming only aliases is what makes the runtime portable, but it also means the single input with the largest effect on output quality can change without any artifact this runtime records changing with it: same build version, same prompts, same fixtures, different answers, nothing to diff. Recording the resolution keeps model choice invisible to *routing* while leaving it visible to *forensics*.
+- **AR-017b**: The count of answer claims the runtime could not trace to a retrieved source MUST be reported as a **structural field** on run completion, not only inside a debug fragment a host may never render. An answer carrying unsupported claims otherwise reaches a consumer byte-identically to a fully-grounded one. Phase 1 reports the count; acting on it is a later phase, and reporting it is what gives that phase a baseline.
 - **AR-020a**: Tool results MUST be scrubbed of credential-shaped values — both static patterns and the deployment's **own bound secret values** — before they reach a prompt, an observable trace, or an audit entry. Tool output does not pass the model-call path where AR-020's scrubbing happens, so it needs its own. This MUST be always-on, not a configurable option.
 
 **Evaluation**
 
 - **AR-021**: The runtime MUST ship an evaluation seed set — prompt cases plus a golden retrieval set — used as a regression tripwire, including a hard assertion that a query never returns a document above the caller's clearance.
+- **AR-021a**: The evaluation set MUST gate **answer** quality, not only retrieval quality, and MUST do so statistically. It MUST assert a grounded-claim threshold over the golden set using the runtime's own computed grounding (AR-017b) rather than a model's opinion of itself, MUST report tokens and cost per case so a change that doubles spend is visible in the same run that shows it was harmless, and MUST evaluate over **N repetitions with a pass-rate threshold** rather than a single pass/fail — a stochastic system graded once yields a coin flip, and a gate that flips is a gate that gets disabled.
 - **AR-022**: The evaluation set MUST **grow from observed failures**: every agent-behavior defect MUST be added as a permanent case, reproduced from its recorded trace, before its fix is considered complete.
 
 **Standalone product capabilities** *(defaults, each behind a port)*
@@ -210,7 +225,8 @@ When a question is ambiguous in a way that would materially change the answer, t
 - **SC-A03**: For the golden set, ≥ 85% of questions surface the correct source pre-rerank; ≥ 80% post-rerank; MRR ≥ 0.70.
 - **SC-A04**: Disallowed and injection inputs are refused **before** any retrieval or spend in 100% of seeded canary cases.
 - **SC-A05**: Every answer carries an observable trace of all retrieval and generation steps, including cost.
-- **SC-A06**: An interrupted long-horizon run resumes and completes — or cancels cleanly — without loss, and never exceeds its per-run cap.
+- **SC-A06**: An interrupted long-horizon run resumes and completes — or cancels cleanly — without loss, and never exceeds its per-run cap. A run that **cannot** be resumed correctly — its checkpoint gone, or written by an incompatible state schema — fails under its own name; the count of silent restarts and silent cross-version resumes is **zero**.
+- **SC-A06a**: Every run terminates under a **named** boundary — completion, refusal, clarification, deadline, cost ceiling, step cap, no-progress, context window, or an explicit failure. No run ends by exhausting a boundary the vocabulary cannot name, and no interactive run's spend is bounded only by the daily budget.
 - **SC-A07**: 100% of gated actions record a human decision before proceeding. A pending or rejected gate spends zero credits and mutates nothing.
 - **SC-A08**: 100% agent-write correctness — an agent edit never modifies content outside its `min(agent, owner)` clearance or tenant, and never raises an access level above its source floor.
 - **SC-A09**: Clarification is rare and useful — fires on ≤ 10% of unambiguous golden queries.
@@ -228,8 +244,10 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 | AR-001 | FR-010 | runtime |
 | AR-002, AR-003 | FR-011 | runtime |
 | AR-003a | — | **new** — memory is the one untrusted input that is persistent and cross-session; clearance filtering was carried over, content trust was not |
+| AR-003b | — | **new** — the removal half of AR-003a. "Replayed until something deletes it" named a mechanism neither repo had: the upstream `MemoryService` port carried `recall` and `write` and no way to end a memory's life |
 | AR-004 | FR-012 | runtime |
 | AR-004a | — | **new** — no upstream counterpart; the reference host's tools were bounded by its own callers |
+| AR-004b | — | **new** — the capability budget, and the hole it exposed. Every statement about a remote tool source governed the *access floor*; none governed what those tools *do*, so a config-only `mcp_client` binding could hand an ungated outward reach to a run already holding private data and untrusted content |
 | AR-004 (action tools) | FR-041 | **shared** — the runtime owns the gating, dispatch, and the `web_search_decide` / `edit_note` node behavior; the **tool bodies** are the host's `DomainPlugin` (a web-search tool wraps the host's fetch/distill path; a note-edit tool mutates host-owned content under a host `WriteEnvelope`) |
 | AR-005, AR-006 | FR-040 | **shared** — runtime pauses; host persists and resolves |
 | AR-007 | FR-040 | runtime |
@@ -242,13 +260,19 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 | AR-014 | FR-028 | runtime |
 | AR-015 | FR-028a | runtime |
 | AR-015a | — | **new** — `history` was the only unbounded input in the state schema; the upstream host bounded it in its chat-session layer, which did not travel |
+| AR-015b | — | **new** — the interactive form had a latency bound and no cost bound; its ceiling was whatever the daily budget still held |
 | AR-016 | FR-028 (checkpoint rule) | runtime |
+| AR-016a | — | **new** — the upstream rule covered the *missing* checkpoint, not the *stale* one. A gate that pauses indefinitely makes "the deploy moved underneath a paused run" ordinary, and that resume fails silently |
+| AR-016b | — | **new** — `max_steps` bounds repetition; nothing detected it. A run looping on one action exhausted its cap and settled, indistinguishable in spend from one that was working |
 | AR-017 | FR-021 | **shared** — runtime emits fragments; host renders the panel |
+| AR-017a | — | **new** — alias indirection made model choice invisible to the runtime, including to its own forensics; a gateway remap changed behavior with every recorded artifact identical |
+| AR-017b | — | **new** — grounding was computed and sent only to a debug panel a host renders on request; the count never reached the event vocabulary |
 | AR-018 | FR-021a | runtime |
 | AR-019 | FR-023 | **shared** — runtime emits; host owns the durable chain |
 | AR-020 | FR-024 | runtime |
 | AR-020a | — | **new** — tool output reaches the prompt and the debug panel without passing the model-call path where FR-024's scrubbing lives |
 | AR-021 | FR-030 | runtime |
+| AR-021a | — | **new** — the eval stage gated retrieval (recall, MRR) and clarification rate; nothing gated the answer, and nothing was run more than once |
 | AR-022 | FR-030a | runtime |
 | AR-023, AR-024, AR-025 | agent-runtime.md invariants 4–6 | runtime (new: previously contract-only, now spec-level) |
 | AR-024a | — | **new** — no upstream counterpart. The reference host is multi-tenant by construction and could never have offered this shape |

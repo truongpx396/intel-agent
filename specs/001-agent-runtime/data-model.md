@@ -35,7 +35,7 @@ The complete, portable description of one agent. Everything here is data the run
 | `prompts` | jsonb | refs into prompt assets — **never inline secrets** |
 | `models` | jsonb | names gateway **aliases** only (`fast`/`smart`/`embed`/`rerank`), never model IDs |
 | `retrieval` | jsonb | `{kind: qdrant\|pgvector, ...}` — binds a `RetrievalService` |
-| `memory` | jsonb | `{kind: mem0\|none}` — degrades cleanly |
+| `memory` | jsonb | `{kind: mem0\|none, retention_days: int\|null}` — degrades cleanly; `retention_days` is a horizon enforced **at recall**, not only by a sweep. `null` is unbounded and is a choice a deployment makes explicitly |
 | `bus` | jsonb | `{kind: jetstream\|redis_streams\|inprocess}` |
 | `mcp_servers` | jsonb | external tool sources to mount |
 | `channels` | text[] | transport adapters to attach (`web_sse`, and Phase 2: `discord`, `slack`, `wechat` — [contracts/channels.md](./contracts/channels.md)). Attaching a channel changes **how** a principal reaches the agent, never **what** they may see |
@@ -46,7 +46,9 @@ The complete, portable description of one agent. Everything here is data the run
 | `token_budget_day` | int | admission budget |
 | `max_loop_depth` | int | default 20 |
 | `run_deadline_s` | int | default 1800; **paused time excluded**; a breach past `assemble` degrades rather than discarding |
+| `run_credits_cap` | int | per-run cost ceiling for the **interactive** form, which the wall-clock deadline bounds only incidentally. Degrades past `assemble` like a deadline. The durable form uses `agent_run.credits_cap` |
 | `max_steps` | int | default 60 (durable form) |
+| `max_no_progress_steps` | int | default 3 (durable form) — consecutive identical step fingerprints before `no_progress`. Bounded re-entry is not forward progress |
 | `history_token_budget` | int | default 24000 — the only unbounded input in `AgentState` gets an explicit ceiling |
 | `history_keep_first` | int | default 2 — opening turns kept verbatim (task framing) |
 | `history_keep_last` | int | default 6 — recent turns kept verbatim (what a follow-up refers to) |
@@ -68,9 +70,9 @@ The complete, portable description of one agent. Everything here is data the run
 | `agent_role` | text | |
 | `status` | text | `queued`\|`running`\|`paused`\|`completed`\|`failed`\|`cancelling`\|`cancelled` |
 | `current_step` | int | |
-| `state` | jsonb | **checkpoint POINTER** — `{thread_id, checkpoint_ns, checkpoint_id, node, step}` |
+| `state` | jsonb | **checkpoint POINTER** — `{thread_id, checkpoint_ns, checkpoint_id, node, step, graph_version, state_schema_version}` |
 | `result` | jsonb | |
-| `error` | text | incl. `checkpoint_lost`, `deadline_exceeded`, `step_cap_exceeded`, `context_window_exceeded` |
+| `error` | text | incl. `checkpoint_lost`, `checkpoint_incompatible`, `deadline_exceeded`, `step_cap_exceeded`, `context_window_exceeded`, `credits_exhausted`, `no_progress` |
 | `credits_cap`, `credits_spent` | int | hard per-run cap, independent of any daily budget |
 | `trace_id` | text | |
 | `started_at`, `last_heartbeat_at`, `completed_at` | timestamptz | |
@@ -79,6 +81,7 @@ The complete, portable description of one agent. Everything here is data the run
 
 - **`state` is a pointer, not the state.** The checkpointer is authoritative for graph state; this column only *locates* the checkpoint on resume.
 - **Checkpoint loss is explicit.** Pointer present but checkpoint gone → `failed('checkpoint_lost')`. Never a silent restart, which would re-spend settled credits.
+- **Checkpoint *staleness* is explicit too.** The pointer carries the `graph_version` and `state_schema_version` of the build that wrote it. A resume under a differing `state_schema_version` → `failed('checkpoint_incompatible')`; a differing `graph_version` alone is recorded and resumes. A gate may pause for days, so "the deploy moved underneath a paused run" is the ordinary case, not the exotic one — and resuming a checkpoint into a changed state schema fails silently rather than loudly, which is the reason this is a stored column and not a convention.
 - **`paused` means interrupted at a human gate**: a matching approval is pending, the checkpoint holds the interrupt payload, and **zero credits accrue while paused**. Resolving resumes **exactly once**.
 - Heartbeat every 10s; a janitor conditionally re-queues on a stale heartbeat.
 - Only the durable form creates a row. Interactive runs carry none.
@@ -113,8 +116,10 @@ The `idem_key` exists because the runtime **cannot** guarantee exactly-once emis
 2. A manifest listing a tool cannot return data the `Policy` would deny — SC-A01 is a deps/floor property, never a manifest property.
 3. Two concurrent runs for different tenants on one worker share no manifest-derived state.
 4. A `paused` run has `credits_spent` unchanged from the moment it paused.
-5. `agent_run.state.thread_id` locates a checkpoint whose `node` matches the last completed node.
-6. A run past `run_deadline_s` terminates at a **node boundary** with spend settled — mid-node termination would leave spend unreconciled. Before `assemble` that is `failed('deadline_exceeded')`; at or after it, the run finishes `degraded` with an answer or its sources under an explicit not-generated marker, and the exhaustion metric increments either way.
-7. Every `Recorder` entry has a `result_hash` and no body.
-8. A session exceeding `history_token_budget` compacts to `history_keep_first` + digest + `history_keep_last` and records the compaction; overflow surviving compaction ends `context_window_exceeded`, never an unclassified provider error.
-9. No `Recorder` entry, `debug` fragment, or emitted event contains a value in the credential scrubber's dynamic registry.
+5. `agent_run.state.thread_id` locates a checkpoint whose `node` matches the last completed node; the same pointer carries the `graph_version` and `state_schema_version` that wrote it, and a resume under a differing schema version ends `checkpoint_incompatible` rather than resuming into a topology the checkpoint predates.
+6. A run past `run_deadline_s` terminates at a **node boundary** with spend settled — mid-node termination would leave spend unreconciled. Before `assemble` that is `failed('deadline_exceeded')`; at or after it, the run finishes `degraded` with an answer or its sources under an explicit not-generated marker, and the exhaustion metric increments either way. A run past `run_credits_cap` / `credits_cap` follows the identical boundary rule under `credits_exhausted` / `degraded{reason:'budget_partial'}` — time and money are set independently, but work already bought is bought under either.
+7. A durable run repeating an identical step fingerprint `max_no_progress_steps` times ends `failed('no_progress')` **before** `max_steps` fires; a run whose fingerprint changes on any step resets the counter and is bounded by `max_steps` alone.
+8. Every `Recorder` entry has a `result_hash` and no body.
+9. A session exceeding `history_token_budget` compacts to `history_keep_first` + digest + `history_keep_last` and records the compaction; overflow surviving compaction ends `context_window_exceeded`, never an unclassified provider error.
+10. No `Recorder` entry, `debug` fragment, or emitted event contains a value in the credential scrubber's dynamic registry.
+11. A `MemoryService.delete` for a principal removes every memory that principal's `recall` could return, and a memory past its retention horizon is not recalled — the two erasure paths a persistent, cross-session, re-injected surface owes.

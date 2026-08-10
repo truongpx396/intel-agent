@@ -29,7 +29,7 @@
 | `Checkpointer` | durable-form resume | **yes** — SQLite / Redis | interactive form needs none | Stable |
 | `Bus` | worker-role fan-out | **yes** — `inprocess` | n/a — `inprocess` *is* the no-broker case | Beta |
 | `StreamWriter` | token/event emission | **yes** — CLI + built-in UI writers | run completes **unstreamed**, recorded as degraded | Stable |
-| `MemoryService` | cross-session recall | **yes** — local memory store | `memories == []`, recorded as degraded | Beta |
+| `MemoryService` | cross-session recall, and the erasure path that surface owes | **yes** — local memory store | `memories == []`, recorded as degraded | Beta |
 | `Channel` | reaching the agent from a chat platform | Phase 2 | the CLI/UI drive the graph directly | Experimental |
 
 **Three different columns, deliberately.** *Ships a default* is what you get out of the box; *if absent* is what happens when a host explicitly binds nothing; *Tier* is the compatibility promise ([host-integration.md §Versioning](./host-integration.md#versioning-stability-tiers-and-breaking-changes)). A port can ship a real default **and** be required — that combination means "you will never accidentally run without this, and you do not have to build it either".
@@ -92,6 +92,8 @@ class ToolSpec(TypedDict):
     description: str
     args_schema: dict
     max_result_bytes: int            # DECLARED, not optional — see below
+    capability: Literal["read_only", "mutating", "outward"]   # DECLARED; absent ⇒ treated as
+                                     #   "outward" (fail closed). Governs gating, not access.
 
 class ToolResult(TypedDict):
     ok: bool
@@ -106,6 +108,8 @@ class ToolRegistry(Protocol):
 
 - Bindings selected by `tools.kind`: `inprocess` (direct calls into the shared tool library) or `mcp_client` (a remote domain MCP server via URL + device PAT).
 - Enforcement — allowlist check, tenant GUCs, audit write — lives in the **shared implementation**, never in the transport. The `mcp_client` binding delegates the identical wrapper to the remote server's own boundary.
+- **Every tool declares a `capability`, and the wrapper gates on it — including tools it did not write.** The bullet above is about the **access floor**: who may call, over which rows, with what audit. It says nothing about **what a tool does**, and those are independent. A remote catalog reached through `mcp_client` can expose a tool that sends, posts, or writes; the remote server will authorize it correctly and the run will hold private data, untrusted content, **and** an outward reach with no human in the path — the exact configuration research §14 budgets against, arrived at by editing a config value. So the wrapper refuses to dispatch a `mutating` or `outward` tool unless the run is in the durable form **and** the call routes through `human_gate`; an **undeclared** capability is treated as `outward`, because the default that matters is the one an unmaintained third-party catalog will hit. `read_only` tools are unaffected, which is every Category A–C tool and most of what a domain server exposes.
+- **Why this is the runtime's job and not the remote server's.** The remote server owns *authorization* — whether this caller may invoke this tool over these rows. The gate is *oversight* — whether a human saw an irreversible action before it happened, on behalf of the principal this runtime is acting for. Delegating the first is the whole point of the decoupled topology; delegating the second would mean a manifest edit could remove human oversight, which is the manifest becoming a policy ([agent-runtime.md](./agent-runtime.md) invariant 1).
 - **MUST** write exactly one audit row per call, through `Recorder`, including on failure.
 - **Every tool declares `max_result_bytes`, and the wrapper enforces it.** `assemble`'s token trim backstops the *context window*, so an oversized result is not a correctness bug — but it is a cost, latency, and rerank-quality bug that the trim happens after and therefore cannot prevent. A `query_employees` filter matching 40,000 rows is paid for in full at fetch, at rerank, and in the funnel arithmetic before a single row is dropped. A clipped result **MUST** set `truncated: true` and carry an explicit in-band marker, never silently return a short list — the model must be able to tell "there were three results" from "there were three thousand and you are seeing the first page", because those warrant different answers.
 - **Tool output is scrubbed before it leaves the wrapper.** Results flow into the prompt *and* into `debug` fragments, neither of which passes the gateway client's PII chokepoint (AR-020). The wrapper applies a **credential scrubber** — static patterns plus a **dynamic registry of the runtime's own secret values** (gateway keys, device PATs, DSNs, whatever was bound at composition) — replacing matches with `[REDACTED]`. Always on, never a config flag. The dynamic half is what catches the case static patterns cannot: a tool that echoes back a connection string the deployment itself supplied.
@@ -134,6 +138,8 @@ class Completion(TypedDict):
     text: str
     usage: dict
     finish_reason: Literal["stop", "length", "content_filter", "error"]
+    model: str                       # the RESOLVED concrete model the alias mapped to, as the
+                                     #   gateway reports it. Recorded, never routed on.
 
 class LLMGatewayClient(Protocol):
     async def complete(self, req: CompletionRequest, *, deadline: float) -> Completion: ...
@@ -143,6 +149,8 @@ class LLMGatewayClient(Protocol):
 ```
 
 - Any OpenAI-wire endpoint. The runtime holds **no provider key** and names only gateway **aliases** (`fast`/`smart`/`embed`/`rerank`), never concrete model IDs — a model swap is a gateway config change, invisible here.
+- **Invisible to routing is not the same as invisible to forensics, and `Completion.model` is what separates them.** Naming aliases is what makes the runtime portable and the offline double possible, and none of that changes. But it means the single input with the largest effect on output quality can be swapped by someone editing a gateway config in another repo, and every artifact this runtime records — `graph_version`, the prompt prefix, the manifest, the eval fixtures — is byte-identical before and after. An eval regression then has no attributable cause: identical inputs, different answers, nothing to diff. So the gateway **MUST** report the concrete model each call actually resolved to, and the runtime records it in the trace and the `cost.calls[]` debug fragment ([agent-graph.md](./agent-graph.md#observability-fragments--what-each-node-owes-the-debug-panel-ar-017-sc-a05)). **No node may read it** — routing stays alias-only, or the portability this port exists for is gone. It is evidence, not an input.
+- **It is not a metric label.** The instrument vocabulary is closed and low-cardinality by rule ([agent-graph.md](./agent-graph.md#node-telemetry--logs-and-metrics-which-the-debug-panel-is-not-ar-018-ar-020)), and a provider's model list is neither — it grows with every snapshot release, and dated snapshot ids are exactly the unbounded label that melts a metrics backend. Correlation to a model happens through the trace, as it does for every other high-cardinality fact.
 - `deadline` is the remaining run budget, passed down so the gateway can refuse rather than overrun.
 - **`max_output_tokens` defaults to 8192 and escalates on demand.** Reserving a large output slot is not free: the reservation is subtracted from the usable input window on most providers, so a default of 32–64K spends a quarter of the context on headroom that a cited answer never uses. The rule is cap low, then react — on `finish_reason == "length"`, retry **once** at 4× the cap. Applied at `generate` only; `route`, `rewrite`, and `rerank` have bounded outputs by construction and keep the default.
 - **A context-length error is a distinct, non-retryable outcome.** The gateway MUST surface a provider `413`-class refusal as a typed error rather than a generic failure — the same prompt does not fit on a second attempt, so retrying it wastes a call to reach the same place. It ends the run `failed('context_window_exceeded')` ([agent-graph.md](./agent-graph.md#conversation-context-budget--bounding-history-ar-015a)).
@@ -151,9 +159,15 @@ class LLMGatewayClient(Protocol):
 ### `MemoryService`, `StreamWriter`, `Checkpointer`, `Bus`
 
 ```python
+class MemorySelector(TypedDict, total=False):
+    memory_ids: Sequence[str]        # a specific memory — the poisoned-entry case
+    principal: str                   # every memory owned by one principal — the erasure case
+    written_before: datetime          # everything older than a horizon — the retention case
+
 class MemoryService(Protocol):
     async def recall(self, ctx: SecurityCtx, query: str) -> list[Memory]: ...
     async def write(self, ctx: SecurityCtx, items: Sequence[Memory]) -> None: ...
+    async def delete(self, ctx: SecurityCtx, selector: MemorySelector) -> int: ...
 
 class StreamWriter(Protocol):
     async def emit(self, event: StreamEvent) -> None: ...
@@ -166,6 +180,11 @@ class Bus(Protocol):
 - **Memories are re-filtered every turn** against current clearance, never trusted from a prior turn's snapshot — a demotion takes effect on the next turn.
 - **A memory is untrusted content, and re-filtering does not make it trusted.** Clearance answers *may this principal see this*; it says nothing about whether the text is trying to issue an instruction. A memory is the only prompt input that is both **persistent** and **cross-session**: it entered on some earlier turn, `guard` will never screen it again, and it arrives at `generate` looking like the agent's own knowledge. It MUST be delimited exactly as retrieved content is ([agent-graph.md](./agent-graph.md#untrusted-content--the-complete-list-because-guard-only-screens-this-turn-ar-002ar-003)).
 - **A backend MUST NOT write memories on its own.** Several off-the-shelf memory services extract and persist facts from turn text by default. That is an autonomous write to a durable, cross-session, replayed-into-every-prompt surface — precisely what research §13 excludes from Phase 1. Bind such a backend with extraction **disabled**, or wrap it so every write is an explicit, audited `write` call the runtime made. `MemoryServiceContract` asserts it.
+- **A surface that replays forever needs a way out, and re-filtering is not one.** Clearance re-filtering makes a memory *invisible to a demoted principal*; it does not remove it, and it does nothing at all for the two cases that actually arise. The first is the runtime's own threat model turned around: this contract argues at length that a memory is the worst untrusted input precisely because a sentence that entered on turn 1 is re-injected on every later turn — and a design that can identify a poisoned memory but not delete it has diagnosed the problem and declined to fix it. The second is ordinary erasure: a principal leaves, or asks to be forgotten, and their memories are the one place the runtime holds durable personal content outside the host's corpus. `delete` is therefore on the port, not on the backend's admin console:
+  - **It is scoped by `ctx` like every other call.** A selector cannot reach outside the caller's tenant, and a `principal` selector naming someone else is refused rather than silently narrowed — a delete that quietly does less than it says is worse than one that fails, because the caller believes the content is gone.
+  - **It is audited like a tool call.** A delete is a mutation of a privileged surface, so it goes through `Recorder` with the selector and the returned count. The count is the point: "deleted 0" and "deleted 40" are different events and an erasure request answered with silence is unverifiable.
+  - **Retention is a horizon, not a cleanup job.** A backend MUST NOT recall a memory past `memory_retention_days` even if a sweep has not yet removed it, so the guarantee holds between sweeps rather than after them. Unset means unbounded, which is a deployment's choice to make explicitly.
+  - **Deletion is not versioned history.** A deleted memory is gone from `recall`; the audit entry that recorded its write, and the one recording its deletion, remain. Those are the host's `Recorder` chain, hold no bodies, and are not a back door into the content.
 - `StreamWriter` is transport-agnostic. The Redis pub/sub adapter is host-specific and stays **behind** this boundary; `graph.astream_events` MUST yield tokens with no Redis client bound.
 - `Checkpointer` is any LangGraph `BaseCheckpointSaver` (Redis, Postgres, SQLite).
 - `Bus` bindings: `jetstream` | `redis_streams` | `inprocess`. A single-container deployment needs **no** bus — worker roles become in-process calls.
@@ -259,10 +278,10 @@ Every port ships a suite in `intel_agent.conformance`, importable by host repos:
 | Suite | Proves |
 |---|---|
 | `RetrievalServiceContract` | pre-filter (not post-filter); empty-result is not an error; `doc_ids` narrows only |
-| `ToolRegistryContract` | allowlist enforced; exactly one audit row per call incl. failures; in-process and MCP paths identical; **`max_result_bytes` clips with `truncated: true` and a marker, never silently**; **a bound secret echoed by a tool comes back `[REDACTED]`** |
+| `ToolRegistryContract` | allowlist enforced; exactly one audit row per call incl. failures; in-process and MCP paths identical; **`max_result_bytes` clips with `truncated: true` and a marker, never silently**; **a bound secret echoed by a tool comes back `[REDACTED]`**; **a `mutating`/`outward` tool is refused outside the durable form and without a gate, and an undeclared capability is treated as `outward`** |
 | `PolicyContract` | purity (same input → same decision, no I/O); fail-closed on unknown action |
-| `LLMGatewayClientContract` | aliases resolve without a provider key; `deadline` refuses rather than overruns; a context-length refusal is typed and **not** retried; `finish_reason == "length"` escalates `max_output_tokens` exactly once; `count_tokens` never under-reports |
-| `MemoryServiceContract` | write-time ownership stamping; **read-time re-filtering against current clearance**; **no autonomous write** — turn text alone produces no memory |
+| `LLMGatewayClientContract` | aliases resolve without a provider key; `deadline` refuses rather than overruns; a context-length refusal is typed and **not** retried; `finish_reason == "length"` escalates `max_output_tokens` exactly once; `count_tokens` never under-reports; **every `Completion` reports the resolved concrete model, and no node reads it** |
+| `MemoryServiceContract` | write-time ownership stamping; **read-time re-filtering against current clearance**; **no autonomous write** — turn text alone produces no memory; **`delete` is scoped, audited, and complete** — a deleted memory never recalls again, a cross-tenant selector is refused, and a memory past the retention horizon is not recalled even before a sweep removes it |
 | `MeterContract` | idempotency key honored; no spend on a refused/paused run |
 | `ApprovalContract` | zero spend while pending; first decision wins; reject never mutates the subject |
 | `IngestorContract` | ownership stamped from `ctx`; unowned content rejected; idempotent by content hash; source treated as untrusted |

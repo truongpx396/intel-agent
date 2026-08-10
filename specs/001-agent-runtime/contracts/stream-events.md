@@ -41,13 +41,15 @@ Same rule as everywhere: the runtime owns the port, the host owns the transport.
 | `gate_resolved` | runtime | `{gate_id, verdict}` | on resume |
 | `degraded` | any node | `{node, reason}` | any time |
 | `error` | runtime | `{code, message}` | **terminal** |
-| `run_finished` | runtime | `{run_id, outcome, usage, answer_generated}` | exactly once, last |
+| `run_finished` | runtime | `{run_id, outcome, usage, answer_generated, ungrounded_claims}` | exactly once, last |
 
 `degraded.reason` is a **closed vocabulary**, so a consumer can branch on it rather than parse prose: `rerank_fallback` \| `memory_unavailable` \| `rewrite_passthrough` \| `vision_failed` \| `history_compacted` \| `deadline_partial` \| `stream_unavailable`.
 
 `run_finished.outcome` is likewise closed: `ok` \| `degraded` \| `blocked` \| `clarified` \| `failed` \| `paused`.
 
 **`answer_generated: false` is the not-generated marker, and it is structural on purpose.** A run that breached its deadline after `assemble` may finish with `citations` and no answer ([agent-graph.md](./agent-graph.md#a-deadline-breach-past-assemble-degrades-it-does-not-discard-ar-015)). A consumer MUST be able to tell that from a normal answer **without reading the prose** — a sentence the model was asked to write is not a protocol, it is a hope. Same reasoning as the `vision` fallback stating the image was not examined.
+
+**`ungrounded_claims` is structural for the same reason, and it is the one that decides whether an answer should be trusted.** `generate` already maps each claim to the chunks supporting it and records the unsupported ones ([agent-graph.md](./agent-graph.md#observability-fragments--what-each-node-owes-the-debug-panel-ar-017-sc-a05)); until this field existed, that count reached only the `debug_fragment` — which a host renders on request, into a panel most members never open. An answer with three unsupported claims otherwise streams **byte-identically** to a fully-grounded one. The integer count travels with every finished run: `0` means every claim traced to a retrieved chunk, and any positive value is the hallucination signal the run already computed and was throwing away. It is **reported, not enforced** in Phase 1 — a consumer decides what to do with it, and the Phase-2 `grade_answer` seam is what will act on it inside the graph.
 
 **Guarantees a consumer may rely on**
 
@@ -59,6 +61,7 @@ Same rule as everywhere: the runtime owns the port, the host owns the transport.
 6. A paused run emits `gate_opened` and then **nothing** until resumed. It is *paused*, not finished — a consumer that treats silence as completion is wrong, and this is the single most common integration bug.
 7. `degraded` may appear at any point and **never** replaces a terminal event. A degraded run still finishes — with `run_finished{outcome:'degraded'}`, never `ok`.
 8. `citations` may arrive with **no** preceding `token` when `answer_generated` is `false`. A consumer that assumes citations imply an answer renders an empty bubble under a source list; this is the second most common integration bug after treating a pause as completion.
+9. `ungrounded_claims` is present on every `run_finished` that generated an answer, and is `0` — not absent — when every claim is supported. Absent and zero must not be conflated: a consumer that reads a missing field as "nothing ungrounded" would render an unmeasured run as a clean one, which is the same smoothing-over the `degraded` vocabulary exists to prevent.
 
 **No payload carries a body.** No prompt text, no chunk text, no memory content in `debug_fragment` or telemetry — refs and hashes only, matching AR-020.
 
@@ -97,7 +100,7 @@ A vocabulary change that breaks a host now breaks a **fixture diff** in the runt
 
 ### `StreamEventContract`
 
-The conformance suite any consumer runs. It asserts the eight guarantees above, plus:
+The conformance suite any consumer runs. It asserts the nine guarantees above, plus:
 
 - **out-of-order and interleaved arrival** is handled (a transport may batch or coalesce)
 - an **unknown future event type** is ignored, not fatal — forward compatibility is what lets the runtime add an event without a synchronized host release
