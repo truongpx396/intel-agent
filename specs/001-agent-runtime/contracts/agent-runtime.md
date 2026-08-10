@@ -59,11 +59,14 @@ prompts:                                       # refs into prompt assets (T074),
 allowed_tools: [search_workspace_knowledge, search_personal_knowledge, get_document_by_id, list_documents]
 models:        { fast: <alias>, smart: <alias> }   # names gateway aliases only (llm-gateway.md)
 retrieval:     { kind: qdrant, collections: [personal, workspace] }   # binds a RetrievalService (kind: pgvector for Profile B)
-memory:        { kind: mem0 }                  # or { kind: none } — memory degrades cleanly
+memory:        { kind: mem0, retention_days: 180 }   # or { kind: none } — memory degrades cleanly;
+                                               #   retention is a horizon enforced at recall, null = unbounded
 bus:           { kind: jetstream }             # kind: redis_streams | inprocess for the self-contained profile
 mcp_servers:   []                              # external MCP tool sources to mount
 channels:      [web_sse]                       # transport adapters to attach
 budgets:       { token_budget_day: <int>, max_loop_depth: 20, credits_cap: <int>,
+                 run_credits_cap: <int>,        # interactive per-run cost ceiling — the deadline bounds spend only incidentally
+                 max_no_progress_steps: 3,      # consecutive identical step fingerprints → no_progress
                  history_token_budget: 24000, history_keep_first: 2, history_keep_last: 6 }
 policy:        single_axis                     # ← SELECTS a Policy impl; is NOT the policy
 can_write:     false
@@ -180,12 +183,13 @@ The `AgentManifest` is **not** a new table. It is the existing `agent_policies` 
 ## Invariants
 
 1. **Config selects, code enforces.** A manifest may name a `policy`; it can never *be* one. The `Authorizer` `Policy` and RLS/Qdrant lowerings are the enforcement floor for every manifest ([the `Policy` port](./agent-deps.md#policy)).
-2. **A manifest narrows, never widens.** `allowed_tools`, `can_write`, and budgets can only *restrict* an agent within what the principal's clearance already permits. No manifest field raises what a `principal` may see — that is `ctx.claims` + the `Policy`, stamped by the trusted layer, never the manifest.
+2. **A manifest narrows, never widens — in *both* dimensions.** `allowed_tools`, `can_write`, and budgets can only *restrict* an agent within what the principal's clearance already permits. No manifest field raises what a `principal` may see — that is `ctx.claims` + the `Policy`, stamped by the trusted layer, never the manifest. **And no manifest field widens what the agent may *do*:** the two are independent, and this invariant was originally stated only about the first. Binding `tools.kind: mcp_client` at a catalog containing a sending or writing tool leaves visibility provably untouched while handing the run an outward reach — a config-only change that widens the second dimension. Hence invariant 8.
 3. **Manifest is per-run, not per-worker.** Loaded from the row at run start; workers hold no manifest state, so any worker can serve any tenant's run and scaling is replica count alone (plan.md stateless-worker + JetStream seams).
 4. **Graph is manifest-blind.** No node reads the manifest; it only sees `AgentDeps` + `ctx`. Adding a domain changes deps and config, never a node (parity with the [agent-graph.md](./agent-graph.md) Extraction checklist).
 5. **One image, N domains.** The runtime binary is identical across domains and across replica counts; a domain is manifest + plugin, a scale-out is `replicas++`.
 6. **Profiles are a superset, never a fork.** Every profile runs the *same* graph binary and manifest schema; A is B plus the Go kernel (billing/auth/RLS-middleware) and the Qdrant+JetStream backing services. Swapping a backing service is a port impl or a config value — never a source fork of the graph or the nodes.
 7. **The access floor is profile-invariant.** Every profile enforces visibility *below* the agent at row granularity. Profile A lowers the predicate to RLS **and** the Qdrant filter; Profile B lowers it to RLS alone. Fewer lowerings is fewer copies to keep in parity, not fewer guarantees — SC-A01 holds identically on both.
+8. **A tool's capability is declared, and the gate is the runtime's — not the tool source's.** Every `ToolSpec`, from every source, declares `read_only` \| `mutating` \| `outward`; the shared wrapper refuses a `mutating`/`outward` dispatch outside the durable form and without `human_gate` in its path, and treats an **undeclared** capability as `outward`. A remote server owns *authorization* — may this caller invoke this, over these rows. This runtime owns *oversight* — did a human see the irreversible thing before it happened. Delegating the first is the decoupled topology working as designed; delegating the second would let a manifest edit remove human oversight, which is invariant 1 violated by a different route. The budget this serves — at most two of {private data, untrusted content, outward reach or mutation} in any one unsupervised run — is research §14.
 
 ---
 
