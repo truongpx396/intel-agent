@@ -1,6 +1,6 @@
 # Prompt-Level Invariant Checklist
 
-*13 items automated · 4 partly automated · 12 human-only*
+*13 items automated · 4 partly automated · 13 human-only*
 
 **Most of this list is now automated — run [`../scripts/track-audit.sh`](../scripts/track-audit.sh)
 first.** It re-derives every ⚙️-marked item below from durable artifacts (the run record, the
@@ -71,6 +71,12 @@ What a reviewer sees in the PR body when a step is missed:
       were the ones binding **its** cluster. Open one fan-out dispatch and check the slice.
 - [ ] ✋ **A6** — Frontend clusters carry the design artefacts (`.stitch/designs/…`,
       `design-system/…`) when they exist.
+- [ ] ✋ **A6b** — Feature-context sections (governance.md item 6) were scoped to **this run's** task
+      IDs/user-story tags, not transcribed wholesale from the feature's full `spec.md`/`plan.md`/
+      `research.md`/`data-model.md`. `G6` proves the content made it into a brief; it cannot tell
+      whether it was the *right* slice for that task — same limitation as A5, one layer earlier. Also
+      check the feature directory itself was resolved from the run's task IDs, not guessed from the
+      branch name, when more than one `specs/*/` exists.
 
 ## A′. Isolation & resume (the early bracket)
 

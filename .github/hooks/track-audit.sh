@@ -713,6 +713,7 @@ fi
 # ════════════════════════════════════════════════════════════════════════════════════
 
 MANUAL_ITEMS="A5|the governance a brief carried was the RIGHT governance — G6 counts bundle constraint lines present in the brief text, it cannot tell whether the sections sliced to that cluster were the ones binding its files
+A6b|feature-context sections (spec/plan/research/contracts) were scoped to this run's task IDs/user-story tags, not transcribed wholesale from the whole feature
 C2|in scaffold mode the controller applied subagent output, never authored it itself
 C3|review applied the governance rubric, not a generic 'looks good'
 D1|the RED batch failed for the RIGHT reason (unmet expectation, not a typo/import error)
