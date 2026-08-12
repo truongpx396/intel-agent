@@ -1,6 +1,6 @@
 ---
 name: sso-single-branch-development
-version: 0.4.1
+version: 0.5.0
 description: 'Run a full end-to-end implementation pipeline on one branch/worktree in one of three execution cores — scaffold (non-behavioral bootstrap batch), story (TDD for new/changed behavior), or refactor (behavior-preserving keep-green) — with two-stage spec-compliance + code-quality verification, evidence capture, optional Copilot hooks, and draft-PR handoff. Use when asked to implement one feature, fix one bug, refactor existing code, or do foundation/scaffold setup with strong quality gates but without multi-track parallel orchestration.'
 ---
 
@@ -30,7 +30,8 @@ by an orchestrator.
 
 - `git` and `gh` CLI authenticated for PR creation; project test commands known.
 - One or more tasks defined. Planning is done upstream: this skill starts post-planning and does
-  **not** reopen brainstorming, spec-writing, or task breakdown mid-run.
+  **not** reopen brainstorming, spec-writing, or task breakdown mid-run — it only *reads* a
+  task-scoped SpecKit spec/plan/research/data-model/contracts slice at the governance gate (Step 4).
 - Optional: mechanical hooks enabled — Copilot (`.github/hooks/*.json`) **or** Claude Code
   (`.claude/settings.json`). [`scripts/install-hooks.sh`](scripts/install-hooks.sh)` --surface
   {copilot|claude|both}` wires either; see [references/hooks.md](references/hooks.md#running-under-claude-code).
@@ -168,8 +169,9 @@ subagent vs ⚙️ script).
    is written or subagent dispatched.** Read [`references/governance.md`](references/governance.md)
    and follow it: discover (constitution · every `applyTo`-matching `.github/instructions/*`, matched
    by listing the directory rather than from a remembered list · design artefacts for frontend
-   surfaces · `security-and-owasp` on any trust boundary), **distil to binding constraints**, **persist to
-   `runs/<RUN_ID>.governance.md`**, then pin it with `track-note.sh governance <path>`.
+   surfaces · `security-and-owasp` on any trust boundary · the task's scoped SpecKit spec/plan/
+   research/data-model/contracts slice, when present), **distil to binding constraints**, **persist
+   to `runs/<RUN_ID>.governance.md`**, then pin it with `track-note.sh governance <path>`.
 
    Three rules the reference expands and this body will not restate:
    - **Persist it, don't just hold it.** The bundle lives in a file because this core spans many
@@ -286,16 +288,17 @@ distinct reviewer, and `track-audit.sh` exist to catch.
 - ⚙️ **script** — a bundled hook/CLI: mechanical, deterministic, no LLM.
 
 "Governance" below means the full bundle from [`references/governance.md`](references/governance.md):
-constitution (hard gate) + every `applyTo`-matching `.github/instructions/*` +
-`security-and-owasp` on trust boundaries, embedded as **content**. The review rubric
-(`code-review-generic`) is not in the bundle — the review step loads it separately.
+constitution (hard gate) + every `applyTo`-matching `.github/instructions/*` + `security-and-owasp`
+on trust boundaries + the task's scoped SpecKit artifact slice (when present), embedded as
+**content**. The review rubric (`code-review-generic`) is not in the bundle — the review step loads
+it separately.
 
 | Step | Fires | Kind |
 |------|-------|------|
 | 1 Preflight | `track-preflight.sh` | ⚙️ script |
 | 2 Reconcile | `track-reconcile.sh` | ⚙️ script |
 | 3 Isolate | `using-git-worktrees` | 🧩 skill |
-| 4 **Governance gate** (all modes, before the mode guard) | read → distil → `runs/<RUN_ID>.governance.md` → `track-note.sh governance` | 🧩 in-session + ⚙️ script |
+| 4 **Governance gate** (all modes, before the mode guard) | read (rules + task's spec/plan/research/data-model/contracts slice) → distil → `runs/<RUN_ID>.governance.md` → `track-note.sh governance` | 🧩 in-session + ⚙️ script |
 | 4 Core — **story** RED author | `dispatching-parallel-agents` → **N× maker** (+ governance) | 🧩 skill → 🤖 subagents |
 | 4 Core — **story** RED review + freeze | `requesting-code-review` (+ governance, + `security-and-owasp`) | 🧩 skill |
 | 4 Core — **story** incremental green | `subagent-driven-development` → per-task **maker** + **reviewer** (+ governance) | 🧩 skill → 🤖 subagents |
@@ -322,15 +325,15 @@ Invariants this skill asserts; most are *realized by* SDD's loop, not re-run her
   green through every transform step. A red test mid-refactor signals a behavior change and must route
   to story mode; greening it by editing a behavioral/contract test is a false green.
 - **Governance gate — hard, in every mode (incl. scaffold)**: every review applies the repo's standing
-  governance on top of the quality rubric — the **project constitution** as a *hard* gate (a diff
-  violating a stated principle fails review in every mode), plus every `applyTo`-matching
-  `.github/instructions/*`, applied to the diff even when the reviewer didn't author the file. The
-  baseline rubric comes from `code-review-generic.instructions.md`, loaded at this step rather than
-  carried in the bundle (see below). The **same governance set is pushed
-  upstream into every maker brief**, so governance gates both ends and review is the backstop, not the
-  first consultation. **No-ops only when those files genuinely don't exist**, never by omission —
-  and `track-audit.sh` fails a run whose bundle omits an `applyTo`-matched file. Procedure:
-  [`references/governance.md`](references/governance.md).
+  governance (now including feature/task context — governance.md item 6) on top of the quality
+  rubric — the **project constitution** as a *hard* gate (a diff violating a stated principle fails
+  review in every mode), plus every `applyTo`-matching `.github/instructions/*`, applied to the diff
+  even when the reviewer didn't author the file. The baseline rubric comes from
+  `code-review-generic.instructions.md`, loaded at this step rather than carried in the bundle (see
+  below). The **same governance set is pushed upstream into every maker brief**, so governance gates
+  both ends and review is the backstop, not the first consultation. **No-ops only when those files
+  genuinely don't exist**, never by omission — and `track-audit.sh` fails a run whose bundle omits an
+  `applyTo`-matched file. Procedure: [`references/governance.md`](references/governance.md).
 - **Security review required** at stage 2 for trust-boundary changes: the `requesting-code-review`
   rubric is quality-only, so the reviewer must also apply `security-and-owasp.instructions.md`.
 - **The reviewer gets the rubric as content.** At the review step, read
@@ -401,12 +404,13 @@ Invariants this skill asserts; most are *realized by* SDD's loop, not re-run her
   assertion, loosened matcher, `skip`-ped case, or a contract test rewritten to pass is a false green
   in every mode — `track-audit.sh` flags both signatures in the diff. A genuinely wrong test routes
   back through its review gate. (Full rules in the story/refactor sections.)
-- **Governance discovery is a main-session in-context read — not a subagent task, not a filename
-  reference.** Two failure modes: (a) delegating the read to a subagent — isolated context means
-  "read the instructions then brief yourself" dies with that agent; (b) passing a filename without
-  content — a brief saying "follow `go.instructions.md`" gives the subagent nothing to act on. Pass
-  **content**. VS Code's `applyTo` injection reaches the main session only and never propagates into
-  dispatched subagents. Full procedure: [`references/governance.md`](references/governance.md).
+- **Governance AND feature-context discovery are a main-session in-context read — not a subagent
+  task, not a filename reference, not a whole-document paste.** A subagent read loses it at the
+  process boundary; a filename without content ("follow `go.instructions.md`", "implement per
+  `spec.md`") gives the subagent nothing to act on. Pass **content**, scoped to this run's task
+  IDs/user-story tags for feature context. VS Code's `applyTo` injection reaches the main session
+  only and never propagates into dispatched subagents. Full procedure:
+  [`references/governance.md`](references/governance.md) item 6.
 - **A long run *will* be compacted, and compaction fires no hook.** It is not a new session, so
   `SessionStart`/`track-reconcile.sh` does not re-run and nothing re-injects what was dropped —
   first to go is bulk pasted content, i.e. your governance excerpts. The model keeps believing it
