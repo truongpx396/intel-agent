@@ -34,7 +34,7 @@ The complete, portable description of one agent. Everything here is data the run
 | `allowed_tools` | text[] | selects from the `ToolRegistry`; narrows only |
 | `prompts` | jsonb | refs into prompt assets — **never inline secrets** |
 | `models` | jsonb | names gateway **aliases** only (`fast`/`smart`/`embed`/`rerank`), never model IDs |
-| `retrieval` | jsonb | `{kind: qdrant\|pgvector, ...}` — binds a `RetrievalService` |
+| `retrieval` | jsonb | `{kind: qdrant\|pgvector\|sqlite, ...}` — binds a `RetrievalService`. `sqlite` is Profile C: a weaker floor enforced by the query rather than the engine, so it warns at startup and fails closed on a multi-tenant manifest (AR-024a) |
 | `memory` | jsonb | `{kind: mem0\|none, retention_days: int\|null}` — degrades cleanly; `retention_days` is a horizon enforced **at recall**, not only by a sweep. `null` is unbounded and is a choice a deployment makes explicitly |
 | `bus` | jsonb | `{kind: jetstream\|redis_streams\|inprocess}` |
 | `mcp_servers` | jsonb | external tool sources to mount |
@@ -123,3 +123,5 @@ The `idem_key` exists because the runtime **cannot** guarantee exactly-once emis
 9. A session exceeding `history_token_budget` compacts to `history_keep_first` + digest + `history_keep_last` and records the compaction; overflow surviving compaction ends `context_window_exceeded`, never an unclassified provider error.
 10. No `Recorder` entry, `debug` fragment, or emitted event contains a value in the credential scrubber's dynamic registry.
 11. A `MemoryService.delete` for a principal removes every memory that principal's `recall` could return, and a memory past its retention horizon is not recalled — the two erasure paths a persistent, cross-session, re-injected surface owes.
+12. A run marked `cancelling` reaches `cancelled` at the **next node boundary** with `credits_spent` settled and no partial side effect; one cancelled while `paused` never executes its gated action and never waits on the approver; a `cancelled` run is not resumable, and cancelling an already-terminal run is a no-op rather than an error. Same boundary rule as a deadline, and for the same reason — mid-node termination would leave spend unreconciled.
+13. Every terminal state in `status` and every value in `error` resolves to a code in the canonical `{code, message, details}` registry (AR-036), and `refused` / `degraded` / `failed` are distinguishable without parsing `message`.
