@@ -21,7 +21,7 @@
 | `Policy` | the access model | **yes** — single-tenant allow-own | **required** — fail closed | Stable |
 | `LLMGatewayClient` | every model call | **yes** — any OpenAI-wire endpoint | **required** | Stable |
 | `Ingestor` | getting content **into** the store | **yes** — files / URLs / text | store must be populated externally | Beta |
-| `IdentityBinder` | who a caller is | **yes** — single-user / user list, fail-closed | **required** once any inbound surface is attached | Experimental |
+| `IdentityBinder` | who a caller is | **for the built-in CLI/UI only** — single-user / user list, fail-closed. **No default for a `Channel`** (see below) | **required** once any inbound surface is attached | Experimental |
 | `Meter` | usage accounting | **yes** — real local ledger (tokens, cost, per principal) | **required** — never silently unmetered | Stable |
 | `Recorder` | append-only audit of tool calls | **yes** — local audit log | **required** — a tool call that cannot be audited must not run | Stable |
 | `ApprovalStore` | human-in-the-loop gates | **yes** — local store + resolve surface | required iff an action tool is enabled | Stable |
@@ -183,7 +183,7 @@ class Bus(Protocol):
 - **A surface that replays forever needs a way out, and re-filtering is not one.** Clearance re-filtering makes a memory *invisible to a demoted principal*; it does not remove it, and it does nothing at all for the two cases that actually arise. The first is the runtime's own threat model turned around: this contract argues at length that a memory is the worst untrusted input precisely because a sentence that entered on turn 1 is re-injected on every later turn — and a design that can identify a poisoned memory but not delete it has diagnosed the problem and declined to fix it. The second is ordinary erasure: a principal leaves, or asks to be forgotten, and their memories are the one place the runtime holds durable personal content outside the host's corpus. `delete` is therefore on the port, not on the backend's admin console:
   - **It is scoped by `ctx` like every other call.** A selector cannot reach outside the caller's tenant, and a `principal` selector naming someone else is refused rather than silently narrowed — a delete that quietly does less than it says is worse than one that fails, because the caller believes the content is gone.
   - **It is audited like a tool call.** A delete is a mutation of a privileged surface, so it goes through `Recorder` with the selector and the returned count. The count is the point: "deleted 0" and "deleted 40" are different events and an erasure request answered with silence is unverifiable.
-  - **Retention is a horizon, not a cleanup job.** A backend MUST NOT recall a memory past `memory_retention_days` even if a sweep has not yet removed it, so the guarantee holds between sweeps rather than after them. Unset means unbounded, which is a deployment's choice to make explicitly.
+  - **Retention is a horizon, not a cleanup job.** A backend MUST NOT recall a memory past `memory.retention_days` (the manifest field — [data-model.md](../data-model.md)) even if a sweep has not yet removed it, so the guarantee holds between sweeps rather than after them. Unset means unbounded, which is a deployment's choice to make explicitly.
   - **Deletion is not versioned history.** A deleted memory is gone from `recall`; the audit entry that recorded its write, and the one recording its deletion, remain. Those are the host's `Recorder` chain, hold no bodies, and are not a back door into the content.
 - `StreamWriter` is transport-agnostic. The Redis pub/sub adapter is host-specific and stays **behind** this boundary; `graph.astream_events` MUST yield tokens with no Redis client bound.
 - `Checkpointer` is any LangGraph `BaseCheckpointSaver` (Redis, Postgres, SQLite).
@@ -205,7 +205,7 @@ class ApprovalStore(Protocol):
 
 Each ships a **working default** and each is overridable:
 
-- **`Meter`** — the default keeps a **real local usage ledger** (tokens, cost, per principal, idempotent by `idem_key`), so a standalone agent knows what it spent. A host with its own billing binds that instead and becomes the authority; the runtime then only *emits* and never writes.
+- **`Meter`** — the default keeps a **real local usage ledger** (tokens, cost, per principal, idempotent by `idem_key`), so a standalone agent knows what it spent. A host with its own billing binds that instead and becomes the authority; the runtime then only *emits* and never writes. **On every profile, including Profile C**: the ledger lives in Postgres on B and in the single SQLite file on C. There is no `NoOpMeter` — a one-file deployment is exactly where an unmetered run would go unnoticed, and *never silently unmetered* in the table above is the whole row.
 - **`Recorder`** — the default writes a local append-only audit log. A host with a tamper-evident chain owns the chain head and the runtime is only a writer.
 - **`ApprovalStore`** — the default persists gates locally with a resolve surface. A host with its own approvals UI binds that.
 
@@ -236,13 +236,15 @@ class Channel(Protocol):
     def listen(self) -> AsyncIterator[InboundMessage]: ...
     def writer(self, msg: InboundMessage) -> StreamWriter: ...
 
-class IdentityBinder(Protocol):           # HOST-supplied
+class IdentityBinder(Protocol):           # default ships for CLI/UI; HOST-supplied for channels
     async def bind(self, msg: InboundMessage) -> SecurityCtx | None: ...
 ```
 
-The runtime owns the **protocol plumbing** (connection, events, rate limits, chunking); the host owns the **identity mapping**, because that is obligation H1 and a wrong answer there is a privilege escalation.
+The runtime owns the **protocol plumbing** (connection, events, rate limits, chunking); the host owns the **platform identity mapping**, because that is obligation H1 and a wrong answer there is a privilege escalation.
 
 `bind` returning `None` MUST refuse the message. It must never fall back to an anonymous or default identity — on a public channel, "unrecognized user" is the normal case.
+
+> **One protocol, two surfaces, and only one of them gets a default.** The port table says `IdentityBinder` ships a default and AR-026 says the mapping is host-supplied; both are true because they describe different callers. The **built-in CLI and web UI** get the shipped default — single-user or an explicit user list, fail-closed (AR-032) — because a standalone product that cannot identify its own operator is not installable. A **`Channel`** gets none: a Discord snowflake or a Slack `(team_id, user_id)` resolves to a principal in a way only the deployment knows, so a channel deployment binds its own (AR-026, `contracts/channels.md`). The composition root MUST NOT let the CLI/UI default satisfy a channel binding — that substitution is what would hand every stranger in a public server whatever clearance the single-user binder grants, and it is the reason these two sentences read like a contradiction until you notice they are about different doors.
 
 Capabilities are **data, not subclassing**, because the platforms genuinely differ: WeChat cannot stream and must answer within ~5s, while Discord and Slack stream by editing a message in place. The runtime adapts to the declaration. Full contract, including the per-platform table: [channels.md](./channels.md).
 
@@ -285,10 +287,18 @@ Every port ships a suite in `intel_agent.conformance`, importable by host repos:
 | `MeterContract` | idempotency key honored; no spend on a refused/paused run |
 | `ApprovalContract` | zero spend while pending; first decision wins; reject never mutates the subject |
 | `IngestorContract` | ownership stamped from `ctx`; unowned content rejected; idempotent by content hash; source treated as untrusted |
+| `RecorderContract` | append-only; one entry per `record`; every entry carries a `result_hash` and **no body**; a failed write **surfaces** rather than being swallowed — `ToolRegistryContract` depends on this to refuse an unauditable dispatch |
+| `StreamWriterContract` | events emit in the published vocabulary and schema version; an unbound writer degrades the run **observably**, never completes it clean; emission never blocks a node past its deadline |
+| `CheckpointerContract` | write-then-read round-trips a checkpoint; a **missing** checkpoint is distinguishable from an **empty** one (the `checkpoint_lost` precondition); the `graph_version` / `state_schema_version` stamps survive the round trip |
+| `BusContract` | `publish`/`subscribe` round-trip; queue-group fan-out delivers once per group; redelivery is at-least-once; **`inprocess` satisfies the same suite as the brokered adapters** |
+| `IdentityBinderContract` | `bind` returning `None` **refuses** and never yields an anonymous or default identity; an unrecognized principal fails closed; a bound `SecurityCtx` carries the domain-agnostic core fully populated |
+| `ErrorEnvelopeContract` | one `{code, message, details}` shape from one code registry on every surface; `refused` / `degraded` / `failed` distinguishable **without parsing prose**; ISO-8601 UTC timestamps; integer credits |
 | `ChannelContract` | declared capabilities are honest; unknown identity refuses; deadline clamping defers rather than truncates; chunking is lossless; no cross-adapter SDK leak |
-| `AccessFloorContract` | **profile-invariant** — a cross-tenant / above-clearance row is `not_found` under both the RLS+vector-filter and RLS-only lowerings |
+| `AccessFloorContract` | **profile-invariant** — a cross-tenant / above-clearance row is `not_found` under all three lowerings: RLS + vector filter, RLS alone, and Profile C's query-level floor |
 
-`AccessFloorContract` is the load-bearing one. It MUST pass **unchanged** under both profile wirings; if it needs profile-specific branches, the boundary is wrong, not the test.
+`AccessFloorContract` is the load-bearing one. It MUST pass **unchanged** under every profile wiring; if it needs profile-specific branches, the boundary is wrong, not the test.
+
+> **Every row in the port table above has a suite here.** AR-025 says *every* port ships one, and for a while this table listed nine while the port table listed fourteen — the five without a suite (`Recorder`, `StreamWriter`, `Checkpointer`, `Bus`, `IdentityBinder`) were, not coincidentally, the five whose failure modes are **silent**: an audit that quietly drops entries, a stream that completes a run nobody watched, a checkpointer that cannot tell "gone" from "empty", a bus that double-delivers, a binder that hands out a default identity. A missing suite is least noticeable exactly where it is most expensive.
 
 ---
 

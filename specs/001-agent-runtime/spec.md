@@ -112,19 +112,18 @@ When a question is ambiguous in a way that would materially change the answer, t
 
 ### Edge Cases
 
+Cases that add behavior not stated elsewhere:
+
 - A moderation provider timeout **blocks** the query, spends nothing, and never reaches retrieval.
 - A rerank outage degrades to fusion order and still produces a cited answer; a retrieval outage fails the run.
 - A memory outage produces an answer with `memories == []`, recorded as degraded.
 - A tool returning malformed data is a handled outcome, not an exception that escapes the node.
 - A tool returning more than its declared cap is clipped and **marked truncated**, never silently shortened.
-- A conversation outgrowing the context budget is compacted — opening and recent turns verbatim, the middle summarized — and the compaction is reported. Overflow that survives compaction is a **named** terminal state, not an unclassified provider error.
-- A deadline breach **before** context assembly fails the run; one **after** it degrades to an answer or to sources under an explicit not-generated marker.
 - An injection planted in a memory on an earlier turn is still framed as data on every later turn, and never triggers a tool call — and that memory can be **deleted**, so the replay ends rather than merely being hidden from a demoted principal.
-- A memory past its retention horizon is not recalled, whether or not a sweep has removed it yet.
-- A run resumed against a build whose state schema differs from the one that wrote its checkpoint fails as `checkpoint_incompatible`; one resumed against a merely different build SHA resumes normally, the difference recorded.
-- A run crossing its per-run cost ceiling before context assembly fails as `credits_exhausted`; one crossing it after degrades to an answer or to sources under the not-generated marker, exactly as a deadline breach does.
-- A long-horizon run repeating one identical action ends as `no_progress` before its step cap fires; one whose actions differ runs to its cap or to completion.
+- A run cancelled while paused at a human gate ends `cancelled` without executing the gated action and without waiting on the approver.
 - Every degradation is **recorded**; none is smoothed over into a clean-looking run.
+
+**Boundary cases are specified once, in their requirement, not restated here.** Context-budget overflow (AR-015a), a deadline breach before or after context assembly (AR-015), a cost-ceiling breach (AR-015b), a stale or missing checkpoint (AR-016, AR-016a), a run that stops making progress (AR-016b), and the memory retention horizon (AR-003b) each already state their own before/after rule and their own named terminal state. An earlier revision of this section carried a third copy of each — after the requirement and the acceptance criterion — which is three places to update and two places to get it wrong.
 
 ---
 
@@ -181,7 +180,7 @@ When a question is ambiguous in a way that would materially change the answer, t
 **Evaluation**
 
 - **AR-021**: The runtime MUST ship an evaluation seed set — prompt cases plus a golden retrieval set — used as a regression tripwire, including a hard assertion that a query never returns a document above the caller's clearance.
-- **AR-021a**: The evaluation set MUST gate **answer** quality, not only retrieval quality, and MUST do so statistically. It MUST assert a grounded-claim threshold over the golden set using the runtime's own computed grounding (AR-017b) rather than a model's opinion of itself, MUST report tokens and cost per case so a change that doubles spend is visible in the same run that shows it was harmless, and MUST evaluate over **N repetitions with a pass-rate threshold** rather than a single pass/fail — a stochastic system graded once yields a coin flip, and a gate that flips is a gate that gets disabled.
+- **AR-021a**: The evaluation set MUST gate **answer** quality, not only retrieval quality, and MUST do so statistically. It MUST assert **≥ 95% grounded claims** over the golden set using the runtime's own computed grounding (AR-017b) rather than a model's opinion of itself, MUST report tokens and cost per case so a change that doubles spend is visible in the same run that shows it was harmless, and MUST evaluate over **N = 5 repetitions with a ≥ 80% (4-of-5) pass-rate threshold** rather than a single pass/fail — a stochastic system graded once yields a coin flip, and a gate that flips is a gate that gets disabled. These three numbers are release-gating and live **here**; the eval tasks reference them rather than restating them.
 - **AR-022**: The evaluation set MUST **grow from observed failures**: every agent-behavior defect MUST be added as a permanent case, reproduced from its recorded trace, before its fix is considered complete.
 
 **Standalone product capabilities** *(defaults, each behind a port)*
@@ -189,14 +188,14 @@ When a question is ambiguous in a way that would materially change the answer, t
 - **AR-029**: The runtime MUST ship an `Ingestor` port with a **working default** that takes files, URLs, and raw text, and produces retrievable, citable content in the bound store. Without this, a standalone deployment can answer over a corpus but cannot build one — which is the difference between a product and a library.
 - **AR-030**: The `Ingestor` MUST stamp every ingested item with the `tenant` and `principal` that own it, so the visibility predicate has something to filter on. Content whose ownership cannot be established MUST be rejected, not ingested as public.
 - **AR-031**: Ingested content MUST be treated as **untrusted** for the entire path — the same rule as AR-002. A document is data, never instructions, at ingest time as well as at retrieval time.
-- **AR-032**: The runtime MUST ship a **default `IdentityBinder`** covering the single-user case and a small explicit user list, and it MUST fail closed on an unrecognized principal. It MUST NOT ship a default that authenticates nobody and authorizes everybody.
+- **AR-032**: The runtime MUST ship a **default `IdentityBinder`** for its own built-in surfaces — the CLI and the minimal web UI — covering the single-user case and a small explicit user list, and it MUST fail closed on an unrecognized principal. It MUST NOT ship a default that authenticates nobody and authorizes everybody. This default MUST NOT be reachable from a `Channel`: platform identity is host-supplied under AR-026, and a default that silently covered both surfaces would be a privilege escalation on the public one.
 - **AR-033**: The runtime MUST ship a **usable chat interface** — a CLI and a minimal web UI — that renders **only** from the published event vocabulary ([contracts/stream-events.md](./contracts/stream-events.md)) and calls no endpoint outside it. If the interface needs a special case, the vocabulary is incomplete and the vocabulary is what gets fixed.
 - **AR-034**: Every default MUST be replaceable by binding a different implementation of the same port, and MUST be held to the **same conformance suite** as any override. A default that cannot be swapped, or that is exempt from the suite, is privileged code and is prohibited.
 - **AR-035** *(no hollow defaults)*: Every shipped default MUST be a **working implementation**, not a no-op. Specifically, the default `Meter` MUST keep a real usage ledger and the default moderation MUST perform a real check. Where a capability cannot function without host context, the runtime MUST **fail to start without a binding** rather than ship a no-op that silently passes — a default that does nothing makes a broken deployment look configured, which is worse than having no default at all.
 
 **Channels** *(Phase 2 — port fixed now)*
 
-- **AR-026**: The runtime MUST reach users over chat platforms (Discord, Slack, WeChat) through a `Channel` port that owns **protocol plumbing only**. The mapping from a platform identity to a `SecurityCtx` MUST be host-supplied, and an unrecognized user MUST be **refused** — never given an anonymous or default identity.
+- **AR-026**: The runtime MUST reach users over chat platforms (Discord, Slack, WeChat) through a `Channel` port that owns **protocol plumbing only**. The mapping from a **platform** identity to a `SecurityCtx` MUST be host-supplied, and an unrecognized user MUST be **refused** — never given an anonymous or default identity. This governs the *platform* surface specifically and does not contradict AR-032: a Discord snowflake or a Slack `(team_id, user_id)` resolves to a principal in a way only the deployment knows, so the runtime ships **no channel binder**, while the standalone CLI/UI surface does get a default one. Reaching those two surfaces with one default is the failure mode — it would hand every stranger in a public server whatever clearance the single-user binder grants.
 - **AR-027**: A `Channel` MUST **declare** its capabilities — streaming, edit-in-place, message size, response deadline — and the runtime MUST adapt to the declaration. A channel that cannot stream receives one buffered message; a channel with a response deadline receives a **deferral** rather than a truncated answer presented as complete.
 - **AR-028**: Attaching a channel MUST NOT change what any principal can see. The access floor is channel-invariant, and graph output for a golden query MUST be byte-identical across channels.
 
@@ -205,7 +204,12 @@ When a question is ambiguous in a way that would materially change the answer, t
 - **AR-023**: No node may read the manifest or dereference a host-specific claim. A new domain MUST be a manifest plus a plugin, never a node edit.
 - **AR-024**: The runtime MUST run with no vector-database client and no message-bus client bound, retrieving through a single relational store and executing worker roles in-process.
 - **AR-024a**: The runtime MUST additionally support a **minimal single-tenant shape** — one container, an embedded file store, and no external service beyond a model endpoint. Because that store cannot enforce the visibility predicate at the engine level, binding it MUST emit a startup warning naming the reduced floor, and MUST **fail closed** rather than serve a deployment that declares more than one tenant.
-- **AR-025**: Every port MUST ship a conformance suite importable by host repositories, so contract drift fails a build rather than a review.
+- **AR-025**: Every port MUST ship a conformance suite importable by host repositories, so contract drift fails a build rather than a review. "Every" is literal and is checked against the port table in [contracts/agent-deps.md](./contracts/agent-deps.md): a port with no suite is a boundary nothing defends, and the ports most likely to be skipped — `Recorder`, `StreamWriter`, `Checkpointer`, `Bus`, `IdentityBinder` — are the ones whose failures are silent rather than loud.
+- **AR-025a**: Every port MUST declare a **stability tier** (`Stable` / `Beta` / `Experimental`), and the tier MUST be enforced mechanically: a signature change to a `Stable` port MUST fail a build without a version bump. A tier is a statement about how much evidence a shape has, not about how much care went into it — freezing a port at `Stable` before its first real adapter means either a major bump for the first thing that adapter teaches, or quietly breaking the promise.
+
+**Interface consistency**
+
+- **AR-036**: Every error the runtime surfaces MUST use one canonical envelope — `{code, message, details}` — drawn from a single error-code registry, on every surface: port errors, terminal run states, CLI exit payloads, and the streamed error event. A caller MUST be able to distinguish **refused**, **degraded**, and **failed** without parsing prose. Timestamps MUST be ISO-8601 UTC and credit values MUST be integers in the smallest unit. A host integrates against shapes; three spellings of "this run did not finish" is three special cases in every host that consumes them.
 
 ### Key Entities
 
@@ -275,6 +279,8 @@ Authoritative mapping back to [the source spec](https://github.com/truongpx396/a
 | AR-021a | — | **new** — the eval stage gated retrieval (recall, MRR) and clarification rate; nothing gated the answer, and nothing was run more than once |
 | AR-022 | FR-030a | runtime |
 | AR-023, AR-024, AR-025 | agent-runtime.md invariants 4–6 | runtime (new: previously contract-only, now spec-level) |
+| AR-025a | — | **new** — port stability tiers were a contract concept with a CI gate and no requirement; a release-gating rule that lives only in a contract is one a spec review never sees |
+| AR-036 | — | **new** — the canonical error envelope was a constitution principle (VIII) with no requirement, no contract test, and a plan row marked PASS on the event-taxonomy half alone |
 | AR-024a | — | **new** — no upstream counterpart. The reference host is multi-tenant by construction and could never have offered this shape |
 | AR-029–AR-031 | FR-001–FR-006, FR-008 (ingestion) | **product default** — a *minimal* ingestor lives here so the agent is standalone; the reference host keeps its full pipeline (conversion, captioning, crawling, sandboxing) and overrides |
 | AR-032 | FR-025–FR-027 (device identity) | **product default** — minimal single-user/user-list binder; the reference host overrides with its own auth |
