@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Standalone, domain-adaptable AI agent that a host can also embed — manifest + domain-plugin composition over a swappable set of ports, with minimal defaults for ingestion, identity, and a chat interface."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Proprietary" }
+license = { text = "MIT" }
 authors = [{ name = "truongpx396", email = "truongpx396@gmail.com" }]
 
 # Runtime deps are the GENERIC runtime only. Anything a host supplies through a
