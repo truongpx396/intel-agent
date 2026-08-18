@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧠 intel-agent
+# 🤖 intel-agent
 
 ### A portable, domain-adaptable AI agent runtime — standalone by default, embeddable by contract
 
