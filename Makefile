@@ -3,7 +3,7 @@ SHELL := bash
 .DEFAULT_GOAL := help
 
 # intel-agent — the self-contained agent runtime extracted from aisat-intel.
-# Single runtime (Python 3.12): no Go tier, no frontend, so no per-runtime guards.
+# Single runtime (Python 3.13): no Go tier, no frontend, so no per-runtime guards.
 # Targets are still tolerant of a specs-only checkout so `make ci` runs green
 # before any code lands.
 

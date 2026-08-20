@@ -14,7 +14,7 @@ The engineering thesis: **every reuse point is a named port with a conformance t
 
 ## Technical Context
 
-**Language**: Python 3.12 (single runtime — deliberately; adding a second requires a constitutional amendment)
+**Language**: Python 3.13 (single runtime — deliberately; adding a second requires a constitutional amendment)
 
 **Primary dependencies**: LangGraph (graph + checkpointing), Pydantic (schemas), `openai` (OpenAI-wire client pointed at any gateway), structlog, tenacity. Everything a host can supply sits behind an extra — a standalone install must not be able to import a vector-DB or message-bus client.
 

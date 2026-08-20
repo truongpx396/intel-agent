@@ -1,6 +1,6 @@
 # CI gate — lint, test, and security-scan every PR and every push to main.
 #
-# intel-agent is a SINGLE-RUNTIME repo (Python 3.12). The parent repo's Go,
+# intel-agent is a SINGLE-RUNTIME repo (Python 3.13). The parent repo's Go,
 # frontend, terraform, and helm jobs have no counterpart here and are deliberately
 # absent — see .specify/memory/constitution.md, Technology & Quality Constraints.
 #
@@ -98,7 +98,7 @@ jobs:
         run: ./scripts/check-vocabulary.sh
 
   # ---------------------------------------------------------------------------
-  # Agent runtime  (Python 3.12)
+  # Agent runtime  (Python 3.13)
   # ---------------------------------------------------------------------------
   python:
     needs: changes

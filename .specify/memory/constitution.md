@@ -5,6 +5,13 @@ This repo's constitution is versioned independently; see the footer. The block
 below headed "INHERITED" is aisat-intel's report, carried over with the
 extraction and kept for provenance — it is NOT this file's version history.
 
+Version change: 1.0.1 → 1.0.2
+Bump rationale: PATCH. Technology & Quality Constraints previously stated a
+  floor ("Python 3.12+") that pyproject.toml did not actually enforce
+  (`requires-python = ">=3.12"`, no upper bound). Both now state an exact pin:
+  `>=3.13,<3.14`. Clarification/toolchain-currency only — no principle,
+  obligation, or port surface changed.
+
 Version change: 1.0.0 → 1.0.1
 Bump rationale: PATCH. No obligation added, removed, or changed. Principle VII
   restated the port surface as an inline list that had drifted three entries
@@ -77,7 +84,7 @@ that way: both repos build the same system across a port boundary, so a
 divergence in the shared engineering rules is a defect, not a local choice.
 Amend them in aisat-intel first, then sync here in one commit.
 
-Changed for a single-runtime (Python 3.12) repo:
+Changed for a single-runtime (Python 3.13) repo:
   - VII. Backend for Frontend -> NOT APPLICABLE (no Go BFF, no SPA here).
     Replaced by VII. Host Boundary Discipline, which governs what this repo
     actually owns: the AgentDeps port surface and the host contract.
@@ -415,8 +422,9 @@ contributor, human or agent.
 
 ## Technology & Quality Constraints
 
-- **Languages & stacks**: Python 3.12+ only. This repo is deliberately
-  single-runtime; adding a second language requires an amendment, not a PR.
+- **Languages & stacks**: Python 3.13 only, pinned exactly (`>=3.13,<3.14`).
+  This repo is deliberately single-runtime; adding a second language requires
+  an amendment, not a PR.
 - **Tooling baseline**: `ruff`, `black`, `mypy`, `pytest`, `uv` for dependency
   resolution and locking. (The parent repo's Go and React toolchains, and the
   `depguard` kernel/product rule, have no counterpart here.)
@@ -489,7 +497,7 @@ document conflicts with it, this constitution prevails.
   **there first**, then synced here in a single `chore(constitution):` commit that
   changes nothing else. A local-only edit to a shared principle is a defect.
 
-**Version**: 1.0.1 | **Ratified**: 2026-08-09 | **Last Amended**: 2026-08-10
+**Version**: 1.0.2 | **Ratified**: 2026-08-09 | **Last Amended**: 2026-08-20
 **Derived from**: AISAT Intel Constitution 2.1.0 @ `aisat-intel@369756e`
 
 > **This footer is the authoritative version of *this* file.** The upstream report
