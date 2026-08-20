@@ -3,7 +3,7 @@ name = "intel-agent"
 version = "0.1.0"
 description = "Standalone, domain-adaptable AI agent that a host can also embed — manifest + domain-plugin composition over a swappable set of ports, with minimal defaults for ingestion, identity, and a chat interface."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13,<3.14"
 license = { text = "MIT" }
 authors = [{ name = "truongpx396", email = "truongpx396@gmail.com" }]
 
@@ -78,13 +78,13 @@ packages = ["src/intel_agent"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 # Ports are Protocols consumed by other repos; an untyped one is a broken contract.
 disallow_untyped_defs = true

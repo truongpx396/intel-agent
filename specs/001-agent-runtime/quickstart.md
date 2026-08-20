@@ -9,7 +9,7 @@ Two paths: stand the runtime up **standalone**, or **embed** it in a host.
 ## Prerequisites
 
 - Docker + Docker Compose
-- `uv` (Python 3.12 toolchain)
+- `uv` (Python 3.13 toolchain)
 - An OpenAI-wire endpoint. The local compose file runs LiteLLM; point it at whatever provider keys you have. **This repo holds no provider key** and never will.
 
 ---

@@ -10,7 +10,7 @@ or wired into a larger product through declared ports.
 One LangGraph `StateGraph`, adapted to a new domain by swapping a **manifest** (config) plus a thin
 **domain plugin** (code) — **never by forking the graph**.
 
-[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](#-technology--dependency-policy)
+[![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](#-technology--dependency-policy)
 [![LangGraph](https://img.shields.io/badge/LangGraph-one%20StateGraph%2C%20two%20forms-1C3C3C)](#-the-graph)
 [![Architecture](https://img.shields.io/badge/Architecture-Ports%20%26%20Adapters-22C55E)](#-design-patterns-actually-in-use)
 [![Contracts](https://img.shields.io/badge/Design-Contract--First-38BDF8)](#-contracts-index)
@@ -504,7 +504,7 @@ See [contracts/channels.md](specs/001-agent-runtime/contracts/channels.md).
 
 ## 🧱 Technology & dependency policy
 
-**Python 3.12, single runtime** — deliberately. Adding a second requires a constitutional amendment.
+**Python 3.13, single runtime** — deliberately. Adding a second requires a constitutional amendment.
 
 | Layer | Choice |
 |---|---|
